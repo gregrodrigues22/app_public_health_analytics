@@ -12,7 +12,7 @@ st.set_page_config(layout="wide", page_title="📊 Public Health Analytics")
 # Side bar
 # ---------------------------------------------------------------
 with st.sidebar:
-    st.image("assets/logo.jpg", use_container_width=True)
+    st.image("assets/logo.png", use_container_width=True)
     st.markdown("""
         <div style='margin: 20px 0;'>
             <hr style='border: none; border-top: 1px solid #ccc;' />
