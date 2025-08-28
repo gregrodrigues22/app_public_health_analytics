@@ -1,0 +1,6 @@
+streamlit>=1.33,<2
+pandas>=2.2
+numpy>=1.26
+plotly>=5.22
+pillow>=10.0
+pytz>=2024.1

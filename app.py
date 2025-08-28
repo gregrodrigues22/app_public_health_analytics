@@ -101,9 +101,9 @@ with st.sidebar:
 - 📸 [Instagram](https://www.instagram.com/patients2python/)
 - 🌐 [Site](https://patients2python.com.br/)
 - 🐙 [GitHub](https://github.com/gregrodrigues22)
-- 👥💬 [WhatsApp – Comunidade](https://chat.whatsapp.com/CBn0GBRQie5B8aKppPigdd)
-- 🤝💬 [WhatsApp – Atendimento](https://patients2python.sprinthub.site/r/whatsapp-olz)
-- 🎓 [Escola de Dados em Saúde](https://app.patients2python.com.br/browse)
+- 👥💬 [Comunidade](https://chat.whatsapp.com/CBn0GBRQie5B8aKppPigdd)
+- 🤝💬 [WhatsApp](https://patients2python.sprinthub.site/r/whatsapp-olz)
+- 🎓 [Escola](https://app.patients2python.com.br/browse)
     """, unsafe_allow_html=True)
 
 # ---------------- Texto de apresentação ----------------
@@ -236,5 +236,14 @@ st.markdown("""
 .block-container { padding-bottom: 76px; }  /* evita sobrepor conteúdo */
 .app-footer a { text-decoration: none; color: #0f6fff; margin: 0 4px; }
 .app-footer a:hover { text-decoration: underline; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<style>
+/* empurra o rodapé para a direita ~ largura da sidebar (ex.: 280px) */
+@media (min-width: 1000px){
+  .app-footer{ left: 280px !important; }
+}
 </style>
 """, unsafe_allow_html=True)
