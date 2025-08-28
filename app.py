@@ -1,23 +1,7 @@
 # ---------------------------------------------------------------
 # Setup & Config
 # ---------------------------------------------------------------
-import io
-import os
-import re
-import textwrap
-import numpy as np
 import pandas as pd
-import streamlit as st
-import streamlit.components.v1 as components
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
-from google.cloud import bigquery
-import json
-from scipy.stats import linregress
-from plotly.subplots import make_subplots
-from plotly.colors import sequential
-from datetime import datetime
-import pytz
 
 # ---------------------------------------------------------------
 # Configuração da página
