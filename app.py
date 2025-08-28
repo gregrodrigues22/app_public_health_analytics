@@ -46,7 +46,7 @@ st.markdown(
 
 # ---------------- Sidebar com categorias e submenus (nativo) ----------------
 with st.sidebar:
-    st.image("assets/logo.jpg", use_container_width=True)
+    st.image("assets/logo.png", use_container_width=True)
     st.markdown("<hr style='border:none;border-top:1px solid #ccc;'/>", unsafe_allow_html=True)
     st.header("Menu")
 
