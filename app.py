@@ -1,23 +1,29 @@
 # ---------------------------------------------------------------
-# Setup & Config
+# app.py  — Public Health Analytics (menu + intro)
 # ---------------------------------------------------------------
 import streamlit as st
 from pathlib import Path
 
-# ---------------------------------------------------------------
-# Configuração da página
-# ---------------------------------------------------------------
+# ---------------- Config da página ----------------
 st.set_page_config(layout="wide", page_title="📊 Public Health Analytics")
 
-# Paths robustos para assets
+# ---------------- Helpers para assets ----------------
 APP_DIR = Path(__file__).resolve().parent
 ASSETS = APP_DIR / "assets"
-LOGO = ASSETS / "logo.png"
-FOTO = ASSETS / "foto_gregorio.jpg"
 
-# ---------------------------------------------------------------
-# Cabeçalho
-# ---------------------------------------------------------------
+def first_existing(*relative_paths: str) -> Path | None:
+    """Devolve o primeiro arquivo que existir em assets/ dentre as opções."""
+    for rel in relative_paths:
+        p = ASSETS / rel
+        if p.exists():
+            return p
+    return None
+
+# Tenta várias extensões (evita erro se trocar png/jpg)
+LOGO = first_existing("logo.png", "logo.jpg", "logo.jpeg", "logo.webp")
+FOTO = first_existing("foto_gregorio.jpg", "foto_gregorio.png", "foto_gregorio.jpeg", "foto_gregorio.webp")
+
+# ---------------- Cabeçalho ----------------
 st.markdown(
     """
     <div style='background: linear-gradient(to right, #004e92, #000428); padding: 40px; border-radius: 12px; margin-bottom:30px'>
@@ -28,16 +34,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---------------------------------------------------------------
-# Sidebar (único) com categorias e submenus
-# ---------------------------------------------------------------
+# ---------------- Sidebar (único) ----------------
 with st.sidebar:
-    if LOGO.exists():
+    if LOGO:
         st.image(str(LOGO), use_container_width=True)
+    else:
+        st.warning(f"Logo não encontrada em {ASSETS}/logo.(png|jpg|jpeg|webp)")
     st.markdown("<hr style='border:none;border-top:1px solid #ccc;'/>", unsafe_allow_html=True)
     st.header("Menu")
 
-    # Atalhos gerais (garanta que os arquivos existem)
+    # Atalhos (garanta que os arquivos existem)
     st.page_link("app.py", label="Análise", icon="📊")
     st.page_link("pages/criacao.py", label="Referência", icon="✅")
 
@@ -51,7 +57,6 @@ with st.sidebar:
         st.page_link("pages/demo/saneamento.py", label="Saneamento (IBGE)", icon="🚰")
 
     with st.expander("Força de Trabalho em Saúde", expanded=False):
-        # Ajuste o path/label conforme o conteúdo real
         st.page_link("pages/forca_trabalho/cnrm_residencias.py", label="Residências Médicas (SISCNRM)", icon="🏠")
         st.page_link("pages/rede/cnes_rh_cbo2002.py", label="Profissionais de Saúde (CNES)", icon="👩‍⚕️")
 
@@ -89,13 +94,13 @@ with st.sidebar:
 
     st.markdown("<hr style='border:none;border-top:1px solid #ccc;'/>", unsafe_allow_html=True)
 
-# ---------------------------------------------------------------
-# Texto de Apresentação
-# ---------------------------------------------------------------
+# ---------------- Texto de apresentação ----------------
 col1, col2 = st.columns([1,3])
 with col1:
-    if FOTO.exists():
+    if FOTO:
         st.image(str(FOTO), caption="Dr. Gregório Victor Rodrigues", use_container_width=True)
+    else:
+        st.info(f"Foto não encontrada em {ASSETS}/foto_gregorio.(jpg|png|jpeg|webp)")
 
 with col2:
     st.markdown(
