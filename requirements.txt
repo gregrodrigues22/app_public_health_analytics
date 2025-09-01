@@ -4,3 +4,6 @@ numpy>=1.26
 plotly>=5.22
 pillow>=10.0
 pytz>=2024.1
+google-cloud-bigquery
+google-cloud-storage
+google-cloud-core
