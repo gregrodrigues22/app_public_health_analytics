@@ -8,3 +8,5 @@ google-cloud-bigquery
 google-cloud-storage
 google-cloud-core
 scipy>=1.11
+db-dtypes>=1.2
+pyarrow>=16
