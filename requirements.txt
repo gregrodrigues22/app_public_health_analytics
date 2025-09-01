@@ -7,3 +7,4 @@ pytz>=2024.1
 google-cloud-bigquery
 google-cloud-storage
 google-cloud-core
+scipy>=1.11
