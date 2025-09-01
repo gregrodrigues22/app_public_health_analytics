@@ -5,3 +5,8 @@ __pycache__/
 .ipynb_checkpoints/
 .streamlit/secrets.toml
 .env
+nohup.out
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
