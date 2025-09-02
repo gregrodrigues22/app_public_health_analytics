@@ -199,7 +199,7 @@ if "aba_ativa" not in st.session_state:
     st.session_state["aba_ativa"] = abas[0]  # default: primeira aba
 
 # Cria tabs e seleciona a ativa
-tabs = st.tabs(tabs)
+tabs = st.tabs(abas)
 aba_idx = abas.index(st.session_state["aba_ativa"])
 
 # ---------------------------------------------------------------------
