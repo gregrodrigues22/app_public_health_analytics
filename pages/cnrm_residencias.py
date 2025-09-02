@@ -576,12 +576,7 @@ if aba == "📈 Analytics":
     st.markdown("---")
 
     with st.expander("🏥 Quais instituições mais certificaram residentes?"):
-        pareto_plotly(
-            df_raw=df,
-            col_categoria="instituicao",         # ou "programa", "uf", etc.
-            col_valor="qtd_certificados",        # <<< importante!
-            titulo="Instituições que mais certificaram residentes — Pareto"
-            )
+            pareto_plotly(df, col_id="instituicao", col_value="qtd_certificados")
 
     with st.expander("🎓 Quais programas mais certificaram residentes?"):
         top_inst = df.groupby("instituicao")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
