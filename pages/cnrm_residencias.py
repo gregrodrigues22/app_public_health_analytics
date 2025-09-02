@@ -19,7 +19,7 @@ from google.cloud import bigquery_storage
 # ---------------------------------------------------------------
 PROJECT_ID  = "escolap2p"
 BQ_LOCATION = "southamerica-east1"
-TABLE_ID    = "escolap2p.base_siscnrm.residentes_raw"
+TABLE_ID    = "escolap2p.base_siscnrm.residentes_mart"
 
 # grava credenciais no /tmp e exporta a env var
 with open("/tmp/keyfile.json", "w") as f:
@@ -140,9 +140,6 @@ with st.sidebar:
 # ---------------------------------------------------------------
 # Config da página 
 # ---------------------------------------------------------------
-# ---------------------------------------------------------------
-# Aquisição de dados do BigQuery (cacheado)
-# ---------------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def consultar_dados(amostra: bool = False):
     # (opcional) selecione só as colunas que usa no app para acelerar
@@ -169,8 +166,7 @@ df = st.session_state["df"]
 ultima_atualizacao = st.session_state["ultima_atualizacao"]
 
 # =====================================================================
-# Dados (usa o df já carregado na app principal, se existir)
-#    - Se rodar isolado, coloque aqui seu loader do BigQuery.
+# Dados
 # =====================================================================
 if "df" not in st.session_state:
     st.warning("Dataset não detectado no estado da sessão. Carregue o df antes ou adapte este loader.")
@@ -184,28 +180,10 @@ df = st.session_state.get("df", None)
 if df is None or df.empty:
     st.stop()
 
-# Normalizações mínimas (não quebra se coluna não existir)
-def _safe_to_datetime(s):
-    try:
-        return pd.to_datetime(s, errors="coerce")
-    except Exception:
-        return pd.to_datetime(pd.Series([None]*len(s)), errors="coerce")
-
-for col_try in ["inicio", "termino", "data_emissao"]:
-    if col_try in df.columns:
-        df[col_try] = _safe_to_datetime(df[col_try])
-
-# Colunas auxiliares
-if "inicio" in df.columns:
-    df["ano_inicio"] = df["inicio"].dt.year
-if "termino" in df.columns:
-    df["ano_termino"] = df["termino"].dt.year
-if "uf" in df.columns:
-    df["uf"] = df["uf"].astype(str).str.upper().str.strip()
-if "programa" in df.columns:
-    df["programa"] = df["programa"].astype(str).str.strip()
-if "instituicao" in df.columns:
-    df["instituicao"] = df["instituicao"].astype(str).str.strip()
+# --- Opções de Filtros
+programa_options = ["(Todos)"] + sorted(df["programa"].dropna().unique().tolist())
+instituicao_options = ["(Todos)"] + sorted(df["instituicao"].dropna().unique().tolist())
+uf_options = ["(Todos)"] + sorted(df["uf"].dropna().unique().tolist())
 
 # =====================================================================
 # Layout – Abas
@@ -218,13 +196,13 @@ tabs = st.tabs(["📺 Instruções de uso", "🧱 Metodologia & Dados", "⬇️ 
 with tabs[0]:
     st.subheader("Como usar")
     st.markdown("""
+- Na aba **Metodologia** você pode encontrar detalhes de como os dados foram tratados, plotados e analisados.
 - Na aba **Download** você pode baixar a **amostra filtrada** ou o **dataset completo** tratado.
 - Na aba **Analytics** você encontra indicadores, séries históricas e rankings. Use os **filtros na barra** para restringir UF, Programa, Instituição e Período.
     """)
     st.markdown("---")
     st.markdown("### Vídeo passo a passo")
-    VIDEO_URL = "https://www.loom.com/share/d1d66f9136cd460988b4a7997c081d00?sid=05286232-34ed-4e1c-ac3b-e6a951cfed11"  # TODO: troque pela URL do seu vídeo
-    st.video(VIDEO_URL)
+    st.video('https://youtu.be/O0fZTR70b7I?si=X1afmDxO9RHTUJ6t') 
 
 # ---------------------------------------------------------------------
 # 2) Metodologia
@@ -273,8 +251,80 @@ Registros de **certificados de residência médica** (CNRM).
 # ---------------------------------------------------------------------
 with tabs[2]:
     st.subheader("Baixar dados tratados")
-
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
+
+    c1, c2 = st.columns([1, 1])
+
+    with c1:
+
+        selected_programa = st.selectbox(
+            "Programas",
+            options=programa_options,
+            index=0  # "(Todos)" vem selecionado por padrão
+            )
+
+        if selected_programa != "(Todos)":
+            dff = dff[dff["programa"] == selected_programa]
+
+
+
+st.write("You selected:", option)
+programa_options = sorted(df['programa'].dropna().unique().tolist())
+instituicao_options = df['instituicao'].dropna().unique().tolist()
+uf_options = df['uf'].dropna().unique().tolist()
+local_atendimento_options = df['LOCAL_ATENDIMENTO'].dropna().unique().tolist()
+ano_inicio_options = sorted(df['ano_inicio'].dropna().unique().tolist(), reverse=True) # Ordena do mais novo para o mais antigo
+ano_termino_options = sorted(df['ano_termino'].dropna().unique().tolist())
+
+    selected_ano_int = st.multiselect("Ano da internação",
+        options=programa_options,
+        default=programa_options
+    )
+    selected_mes_int = st.multiselect(
+        "Mês da internação",
+        options=meses_options,
+        default=meses_options
+    )
+    selected_quintil_custo = st.multiselect(
+        "Quintil de custo",
+        options=quintil_custo_options,
+        default=quintil_custo_options
+    )
+
+    filtros_obrigatorios = {
+    "Faixa Etária": selected_faixa_etaria,
+    "Sexo": selected_sexo,
+    "Tipo de Internamento": selected_tipo_internamento,
+    "Local de Atendimento": selected_local_atendimento,
+    "Ano da Internação": selected_ano_int,
+    "Mês da Internação": selected_mes_int,
+    "Quintil de Custo": selected_quintil_custo,
+    "Capítulo CID": selected_capitulo_cid,
+    "Tipo ICSAP": selected_tipo_icsap,
+    "Estabelecimento (CNES)": selected_cnes,
+    "Tipo de Gestão": selected_tipo_gestao,
+    "Tipo de Vínculo SUS": selected_tipo_vinculo
+    }
+
+    for nome, valor in filtros_obrigatorios.items():
+        if not valor:
+            st.warning(f"⚠️ Por favor, selecione pelo menos uma opção para **{nome}**.")
+            st.stop()
+            
+    df = df[
+        (df['FAIXA_ETARIA'].isin(selected_faixa_etaria)) &
+        (df['SEXO_DESC'].isin(selected_sexo)) &
+        (df['TIPO_INTERNAMENTO'].isin(selected_tipo_internamento)) &
+        (df['LOCAL_ATENDIMENTO'].isin(selected_local_atendimento)) &
+        (df['ANO_INT'].isin(selected_ano_int)) &
+        (df['MES_INT'].isin(selected_mes_int)) &
+        (df['QUINTIL_CUSTO'].isin(selected_quintil_custo)) &
+        (df['capitulo'].isin(selected_capitulo_cid)) &
+        (df['icsap'].isin(selected_tipo_icsap)) &
+        (df['CNES'].isin(selected_cnes)) &
+        (df['TIPO_GESTAO'].isin(selected_tipo_gestao)) &
+        (df['TIPO_VINC_SUS'].isin(selected_tipo_vinculo))
+    ]
 
     # função utilitária
     def _csv_bytes(_df: pd.DataFrame) -> bytes:
@@ -371,16 +421,16 @@ with tabs[3]:
     colA, colB = st.columns(2)
 
     # Top Programas
-    if "programa" in dff.columns:
-        top_prog = (dff["programa"]
-                    .value_counts()
-                    .reset_index()
-                    .rename(columns={"index": "programa", "programa": "qtd"})
-                    .head(15))
-        fig_p = go.Figure(go.Bar(x=top_prog["qtd"], y=top_prog["programa"], orientation="h"))
-        fig_p.update_layout(title="Top 15 Programas (por registros)",
-                            xaxis_title="Quantidade", yaxis_title="", height=450)
-        colA.plotly_chart(fig_p, use_container_width=True)
+    #if "programa" in dff.columns:
+    #    top_prog = (dff["programa"]
+    #                .value_counts()
+    #                .reset_index()
+    #                .rename(columns={"index": "programa", "programa": "qtd"})
+    #                .head(15))
+    #    fig_p = go.Figure(go.Bar(x=top_prog["qtd"], y=top_prog["programa"], orientation="h"))
+    #    fig_p.update_layout(title="Top 15 Programas (por registros)",
+    #                        xaxis_title="Quantidade", yaxis_title="", height=450)
+    #    colA.plotly_chart(fig_p, use_container_width=True)
 
     # Top Instituições
     if "instituicao" in dff.columns:
