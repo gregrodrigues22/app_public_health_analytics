@@ -517,6 +517,17 @@ with tabs[3]:
     
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
+    df_resultado = consultar_agrupado_por_filtros(
+        programa=selected_programa,
+        instituicao=selected_instituicao,
+        regiao=selected_regiao,
+        uf=selected_uf,
+        validacao=selected_validacao,
+        ano_inicio_range=range_inicio,
+        ano_termino_range=range_termino
+        )
+    st.success("✅ Consulta finalizada com sucesso!")
+
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
