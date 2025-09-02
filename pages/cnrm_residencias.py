@@ -192,7 +192,7 @@ anos_termino        = filtros.get("anos_termino", [])
 # Layout – Abas
 # =====================================================================
     
-abas = ["📺 Instruções de uso", "🧱 Metodologia & Dados", "⬇️ Download", "📈 Analytics"]
+abas = ["📺 Instruções de uso", "🧱 Metodologia", "⬇️ Download", "📈 Analytics"]
 
 # Define aba inicial se não existir
 if "aba_ativa" not in st.session_state:
@@ -207,7 +207,7 @@ aba_idx = abas.index(st.session_state["aba_ativa"])
 # ---------------------------------------------------------------------
 with tabs[0]:
 
-    st.subheader("Como usar")
+    st.subheader("📺 Intruções de uso")
     st.markdown("""
 - Na aba **Metodologia** você pode encontrar detalhes de como os dados foram tratados, plotados e analisados.
 - Na aba **Download** você pode baixar a **amostra filtrada** ou o **dataset completo** tratado.
@@ -222,7 +222,7 @@ with tabs[0]:
 # ---------------------------------------------------------------------
 with tabs[1]:
 
-    st.subheader("Metodologia, engenharia de dados e fontes")
+    st.subheader("🧱 Metodologia")
 
     c1, c2 = st.columns([1.2, 1])
     with c1:
@@ -287,13 +287,15 @@ with tabs[2]:
 
     with c1:
         st.markdown("**Consulte o dicionário com a estrutura dos dados**")
-        st.download_button(
+        if st.download_button(
             "📄 Baixar dicionário (CSV)",
             data=dict_cols.to_csv(index=False).encode('utf-8'),
             file_name=f"crnm_dicionario_{datetime.now().date()}.csv",
             mime="text/csv",
-            use_container_width=True
-        )
+            use_container_width=True,
+            key="botao_dicionario"
+        ):
+            st.session_state["aba_ativa"] = "Download"
 
     # Filtros
     st.markdown("**Aplique filtros para personalizar os dados a serem baixados**")
@@ -383,6 +385,7 @@ with tabs[2]:
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
     if st.button("Consultar dados agregados"):
+        st.session_state["aba_ativa"] = "⬇️ Download"  # mantém aba ativa
         with st.spinner("⏳ Consultando dados no BigQuery..."):
             df_resultado = consultar_agrupado_por_filtros(
                 programa=selected_programa,
@@ -394,7 +397,9 @@ with tabs[2]:
                 ano_termino_range=range_termino,
             )
         st.success("✅ Consulta finalizada com sucesso!")
-        st.metric("Certificados válidos", df_resultado['qtd_certificados'].sum(), border=True)
+        c5, c6 = st.columns([1, 1])
+        with c5:
+            st.metric("Certificados válidos", df_resultado['qtd_certificados'].sum(), border=True)
         st.dataframe(df_resultado)
 
     if 'df_resultado' in locals() and not df_resultado.empty:
