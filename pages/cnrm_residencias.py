@@ -19,7 +19,7 @@ from google.cloud import bigquery_storage
 # ---------------------------------------------------------------
 PROJECT_ID  = "escolap2p"
 BQ_LOCATION = "southamerica-east1"
-TABLE_ID    = "escolap2p.base_siscnrm.residentes_mart"
+TABLE_ID    = "escolap2p.base_siscnrm.residentes_applications"
 
 # grava credenciais no /tmp e exporta a env var
 with open("/tmp/keyfile.json", "w") as f:
@@ -229,7 +229,7 @@ Registros de **certificados de residência médica** (CNRM).
 - Campos textuais (`programa`, `instituicao`, `uf`) padronizados.  
 - Geração de colunas derivadas: `ano_inicio`, `ano_termino`.  
 - Geração de campo de região para identificar região do país segundo `uf`.
-- Geração de campo de validação: se linha não contiver data de ínicio OU data de término OU programa OU instituição OU nome do médico é definido como não validado.
+- Geração de campo de validação: se linha não contiver data de ínicio OU data de término OU programa OU instituição OU nome do médico é definido como não validado. Dessa forma, 4.836 linhas foram definidas como não válidas, ao passo que 356.105 linhas foram definidas como válidas.
 
 **Limitações conhecidas**  
 - Registros antigos podem vir sem CRM ou com `uf` faltante.  
@@ -296,9 +296,10 @@ with tabs[2]:
         if validacao and validacao != "(Todas)":
             condicoes.append(f"validacao = '{validacao}'")
         if ano_inicio_range:
-            condicoes.append(f"EXTRACT(YEAR FROM inicio) BETWEEN {ano_inicio_range[0]} AND {ano_inicio_range[1]}")
+            condicoes.append(f"ano_inicio BETWEEN {ano_inicio_range[0]} AND {ano_inicio_range[1]}")
+
         if ano_termino_range:
-            condicoes.append(f"EXTRACT(YEAR FROM termino) BETWEEN {ano_termino_range[0]} AND {ano_termino_range[1]}")
+            condicoes.append(f"ano_termino BETWEEN {ano_termino_range[0]} AND {ano_termino_range[1]}")
 
         where_clause = "WHERE " + " AND ".join(condicoes) if condicoes else ""
 
