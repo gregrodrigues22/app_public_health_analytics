@@ -151,21 +151,19 @@ def consultar_filtros_com_anos():
         query = f"SELECT DISTINCT {col} FROM `{TABLE_ID}` WHERE {col} IS NOT NULL"
         job = client.query(query, location=BQ_LOCATION)
         df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
-        valores = sorted(df[col].dropna().unique().tolist())
-        filtros[col] = valores
+        filtros[col] = sorted(df[col].dropna().unique().tolist())
 
-    # Consultar anos distintos de início e término
+    # Consulta para os anos já existentes
     query_anos = f"""
         SELECT DISTINCT
-          EXTRACT(YEAR FROM inicio) AS ano_inicio,
-          EXTRACT(YEAR FROM termino) AS ano_termino
+            ano_inicio,
+            ano_termino
         FROM `{TABLE_ID}`
-        WHERE inicio IS NOT NULL OR termino IS NOT NULL
+        WHERE ano_inicio IS NOT NULL OR ano_termino IS NOT NULL
     """
     job = client.query(query_anos, location=BQ_LOCATION)
     df_anos = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
 
-    # Listas únicas de anos (removendo NaN e convertendo para int)
     filtros["anos_inicio"] = sorted(df_anos["ano_inicio"].dropna().astype(int).unique().tolist())
     filtros["anos_termino"] = sorted(df_anos["ano_termino"].dropna().astype(int).unique().tolist())
 
