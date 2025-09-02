@@ -169,9 +169,9 @@ def consultar_filtros_com_anos():
 
     return filtros, datetime.now(pytz.timezone("America/Sao_Paulo"))
 
-# --- Carrega uma vez e guarda no session_state
 if "filtros" not in st.session_state:
-    st.session_state["filtros"], st.session_state["ultima_atualizacao"] = consultar_filtros_com_anos()
+    with st.spinner("⏳ Carregando filtros disponíveis..."):
+        st.session_state["filtros"], st.session_state["ultima_atualizacao"] = consultar_filtros_com_anos()
 
 filtros = st.session_state["filtros"]
 ultima_atualizacao = st.session_state["ultima_atualizacao"]
@@ -228,18 +228,13 @@ Registros de **certificados de residência médica** (CNRM).
 - `inicio`, `termino` e `data_emissao` convertidas para `datetime`.  
 - Campos textuais (`programa`, `instituicao`, `uf`) padronizados.  
 - Geração de colunas derivadas: `ano_inicio`, `ano_termino`.  
+- Geração de campo de região para identificar região do país segundo `uf`.
+- Geração de campo de validação: se linha não contiver data de ínicio OU data de término OU programa OU instituição OU nome do médico é definido como não validado.
 
 **Limitações conhecidas**  
 - Registros antigos podem vir sem CRM ou com `uf` faltante.  
 - Homônimos e mudanças de nomenclatura institucional/programática podem exigir reconciliação (matching) adicional.
         """)
-
-        st.markdown("**Dicionário de campos (auto-gerado pelo schema atual):**")
-        dict_cols = pd.DataFrame({
-            "coluna": df.columns,
-            "dtype": [str(t) for t in df.dtypes]
-        })
-        st.dataframe(dict_cols, use_container_width=True, hide_index=True)
 
     with c2:
         st.markdown("#### Links úteis")
@@ -252,7 +247,6 @@ Registros de **certificados de residência médica** (CNRM).
 # ---------------------------------------------------------------------
 # 3) Download
 # ---------------------------------------------------------------------
-dff = df.copy()
 
 with tabs[2]:
     st.subheader("Baixar dados tratados")
@@ -329,15 +323,17 @@ with tabs[2]:
         return df
     
     if st.button("Consultar dados agregados"):
-        df_resultado = consultar_agrupado_por_filtros(
-            programa=selected_programa,
-            instituicao=selected_instituicao,
-            regiao=selected_regiao,
-            uf=selected_uf,
-            validacao=selected_validacao,
-            ano_inicio_range=range_inicio,
-            ano_termino_range=range_termino,
-        )
+        with st.spinner("⏳ Consultando dados no BigQuery..."):
+            df_resultado = consultar_agrupado_por_filtros(
+                programa=selected_programa,
+                instituicao=selected_instituicao,
+                regiao=selected_regiao,
+                uf=selected_uf,
+                validacao=selected_validacao,
+                ano_inicio_range=range_inicio,
+                ano_termino_range=range_termino,
+            )
+        st.success("✅ Consulta finalizada com sucesso!")
         st.dataframe(df_resultado)
 
     def consultar_schema_tabela():
