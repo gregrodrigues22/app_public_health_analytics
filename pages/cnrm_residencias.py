@@ -243,9 +243,9 @@ Registros de **certificados de residência médica** (CNRM).
     with c2:
         st.markdown("#### Links úteis")
         st.markdown("""
-- 📚 **Fonte oficial**: [Portal CNRM](http://siscnrm.mec.gov.br/certificados)  <!-- TODO: ajuste se quiser -->
-- 🗃️ **Tabela no BigQuery**: `escolap2p.base_siscnrm.residentes_raw`
-- 🧪 **Reprodutibilidade**: código do ETL (em breve no GitHub)  <!-- TODO: link do repo -->
+- 📚 **Fonte oficial**: [Portal CNRM](http://siscnrm.mec.gov.br/certificados)
+- 🗃️ **Tabela no BigQuery**: `escolap2p.base_siscnrm.residentes_applications`
+- 🧪 **Reprodutibilidade**: código do ETL (em breve no GitHub) 
         """)
 
 # ---------------------------------------------------------------------
@@ -266,17 +266,30 @@ with tabs[2]:
         selected_validacao = st.selectbox("Validação", options=validacao_options, index=0)
 
     with c2:
-
         range_inicio = None
         range_termino = None
 
         if anos_inicio:
-            min_inicio, max_inicio = min(anos_inicio), max(anos_inicio)
-            range_inicio = st.slider("Período (ano de início)", min_inicio, max_inicio, (min_inicio, max_inicio))
+            anos_inicio_limpos = sorted(set(int(ano) for ano in anos_inicio if pd.notnull(ano) and str(ano).isdigit()))
+            if anos_inicio_limpos:
+                min_inicio, max_inicio = min(anos_inicio_limpos), max(anos_inicio_limpos)
+                range_inicio = st.slider(
+                    "Período (ano de início)", 
+                    min_inicio, 
+                    max_inicio, 
+                    (min_inicio, max_inicio)
+                )
 
         if anos_termino:
-            min_termino, max_termino = min(anos_termino), max(anos_termino)
-            range_termino = st.slider("Período (ano de término)", min_termino, max_termino, (min_termino, max_termino))
+            anos_termino_limpos = sorted(set(int(ano) for ano in anos_termino if pd.notnull(ano) and str(ano).isdigit()))
+            if anos_termino_limpos:
+                min_termino, max_termino = min(anos_termino_limpos), max(anos_termino_limpos)
+                range_termino = st.slider(
+                    "Período (ano de término)", 
+                    min_termino, 
+                    max_termino, 
+                    (min_termino, max_termino)
+                )
 
     @st.cache_data(ttl=1800, show_spinner=True)
     def consultar_agrupado_por_filtros(
@@ -307,7 +320,7 @@ with tabs[2]:
 
         where_clause = "WHERE " + " AND ".join(condicoes) if condicoes else ""
 
-        group_dims = ["programa", "instituicao", "regiao", "uf", "validacao"]
+        group_dims = ["regiao", "uf", "instituicao", "programa"]
         select_clause = ", ".join(group_dims)
 
         query = f"""
