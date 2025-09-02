@@ -229,12 +229,16 @@ Registros de **certificados de residência médica** (CNRM).
 - Campos textuais (`programa`, `instituicao`, `uf`) padronizados.  
 - Geração de colunas derivadas: `ano_inicio`, `ano_termino`.  
 - Geração de campo de região para identificar região do país segundo `uf`.
-- Geração de campo de validação: se linha não contiver data de ínicio OU data de término OU programa OU instituição OU nome do médico é definido como não validado. Dessa forma, 4.836 linhas foram definidas como não válidas, ao passo que 356.105 linhas foram definidas como válidas.
+- Geração de campo de validação: se linha não contiver data de ínicio OU data de término OU programa OU instituição OU nome do médico é definido como não validado. 
 
 **Limitações conhecidas**  
-- Registros antigos podem vir sem CRM ou com `uf` faltante.  
+- Registros com dados inválidos.  
 - Homônimos e mudanças de nomenclatura institucional/programática podem exigir reconciliação (matching) adicional.
         """)
+
+    a, b = st.columns(2)
+    a.metric("Certificados válidos", "356.105", border=True)
+    b.metric("Certificados inválidos", "4.836", border=True)
 
     with c2:
         st.markdown("#### Links úteis")
@@ -267,12 +271,12 @@ with tabs[2]:
         range_termino = None
 
         if anos_inicio:
-            min_y, max_y = min(anos_inicio), max(anos_inicio)
-            range_inicio = st.slider("Período (ano de início)", min_y, max_y, (min_y, max_y))
+            min_inicio, max_inicio = min(anos_inicio), max(anos_inicio)
+            range_inicio = st.slider("Período (ano de início)", min_inicio, max_inicio, (min_inicio, max_inicio))
 
         if anos_termino:
-            min_y, max_y = min(anos_termino), max(anos_termino)
-            range_termino = st.slider("Período (ano de término)", min_y, max_y, (min_y, max_y))
+            min_termino, max_termino = min(anos_termino), max(anos_termino)
+            range_termino = st.slider("Período (ano de término)", min_termino, max_termino, (min_termino, max_termino))
 
     @st.cache_data(ttl=1800, show_spinner=True)
     def consultar_agrupado_por_filtros(
