@@ -303,9 +303,8 @@ with tabs[2]:
             use_container_width=True,
             key="botao_dicionario",
             on_click=manter_aba_download
-        ):
-            st.session_state["aba_ativa"] = "⬇️ Download"
-
+            )
+            
     # Filtros
     st.markdown("**Aplique filtros para personalizar os dados a serem baixados**")
     c3, c4 = st.columns([1, 1])
