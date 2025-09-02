@@ -36,34 +36,6 @@ def get_clients():
 client, bqs = get_clients()
 
 # ---------------------------------------------------------------
-# Aquisição de dados do BigQuery (cacheado)
-# ---------------------------------------------------------------
-@st.cache_data(ttl=3600, show_spinner=False)
-def consultar_dados(amostra: bool = False):
-    # (opcional) selecione só as colunas que usa no app para acelerar
-    # cols = ["certificado","medico","crm","programa","instituicao","uf","inicio","termino","data_emissao"]
-    # query = f"SELECT {', '.join(cols)} FROM `{TABLE_ID}`"
-    query = f"SELECT * FROM `{TABLE_ID}`"
-
-    if amostra:
-        query += "\nLIMIT 20000"
-
-    job = client.query(query, location=BQ_LOCATION)
-    job.result(timeout=180)
-
-    df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
-
-    tz = pytz.timezone("America/Sao_Paulo")
-    return df, datetime.now(tz)
-
-# --- carregue uma vez e guarde no session_state (evita requery)
-if "df" not in st.session_state:
-    st.session_state["df"], st.session_state["ultima_atualizacao"] = consultar_dados(amostra=True)  # troque para False quando finalizar
-
-df = st.session_state["df"]
-ultima_atualizacao = st.session_state["ultima_atualizacao"]
-
-# ---------------------------------------------------------------
 # Config da página
 # ---------------------------------------------------------------
 st.set_page_config(layout="wide", page_title="📊 Public Health Analytics")
@@ -168,6 +140,33 @@ with st.sidebar:
 # ---------------------------------------------------------------
 # Config da página 
 # ---------------------------------------------------------------
+# ---------------------------------------------------------------
+# Aquisição de dados do BigQuery (cacheado)
+# ---------------------------------------------------------------
+@st.cache_data(ttl=3600, show_spinner=False)
+def consultar_dados(amostra: bool = False):
+    # (opcional) selecione só as colunas que usa no app para acelerar
+    # cols = ["certificado","medico","crm","programa","instituicao","uf","inicio","termino","data_emissao"]
+    # query = f"SELECT {', '.join(cols)} FROM `{TABLE_ID}`"
+    query = f"SELECT * FROM `{TABLE_ID}`"
+
+    if amostra:
+        query += "\nLIMIT 20000"
+
+    job = client.query(query, location=BQ_LOCATION)
+    job.result(timeout=180)
+
+    df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
+
+    tz = pytz.timezone("America/Sao_Paulo")
+    return df, datetime.now(tz)
+
+# --- carregue uma vez e guarde no session_state (evita requery)
+if "df" not in st.session_state:
+    st.session_state["df"], st.session_state["ultima_atualizacao"] = consultar_dados(amostra=True)  # troque para False quando finalizar
+
+df = st.session_state["df"]
+ultima_atualizacao = st.session_state["ultima_atualizacao"]
 
 # =====================================================================
 # Dados (usa o df já carregado na app principal, se existir)
@@ -219,13 +218,12 @@ tabs = st.tabs(["📺 Instruções de uso", "🧱 Metodologia & Dados", "⬇️ 
 with tabs[0]:
     st.subheader("Como usar")
     st.markdown("""
-- Use os **filtros na barra lateral** para restringir UF, Programa, Instituição e Período.
-- Na aba **Analytics** você encontra indicadores, séries históricas e rankings.
 - Na aba **Download** você pode baixar a **amostra filtrada** ou o **dataset completo** tratado.
+- Na aba **Analytics** você encontra indicadores, séries históricas e rankings. Use os **filtros na barra** para restringir UF, Programa, Instituição e Período.
     """)
     st.markdown("---")
     st.markdown("### Vídeo passo a passo")
-    VIDEO_URL = "https://youtu.be/XXXXXXXXXXX"  # TODO: troque pela URL do seu vídeo
+    VIDEO_URL = "https://www.loom.com/share/d1d66f9136cd460988b4a7997c081d00?sid=05286232-34ed-4e1c-ac3b-e6a951cfed11"  # TODO: troque pela URL do seu vídeo
     st.video(VIDEO_URL)
 
 # ---------------------------------------------------------------------
@@ -240,8 +238,8 @@ with tabs[1]:
 **Escopo**  
 Registros de **certificados de residência médica** (CNRM).
 
-**Aquisição & Atualização**  
-- Fonte primária: *Comissão Nacional de Residência Médica (CNRM)*.  
+**Aquisição & Atualização** 
+- Fonte primária: *Comissão Nacional de Residência Médica (CNRM)*. 
 - Periodicidade: quando houver atualização pública.  
 - Pipeline: extração → padronização de colunas → tipos/normalização de datas → chaves canônicas (UF, programa, instituição).
 
@@ -265,7 +263,7 @@ Registros de **certificados de residência médica** (CNRM).
     with c2:
         st.markdown("#### Links úteis")
         st.markdown("""
-- 📚 **Fonte oficial**: [Portal CNRM](https://www.gov.br/mec/pt-br/assuntos/educacao-superior/residencia-medica)  <!-- TODO: ajuste se quiser -->
+- 📚 **Fonte oficial**: [Portal CNRM](http://siscnrm.mec.gov.br/certificados)  <!-- TODO: ajuste se quiser -->
 - 🗃️ **Tabela no BigQuery**: `escolap2p.base_siscnrm.residentes_raw`
 - 🧪 **Reprodutibilidade**: código do ETL (em breve no GitHub)  <!-- TODO: link do repo -->
         """)
@@ -276,7 +274,7 @@ Registros de **certificados de residência médica** (CNRM).
 with tabs[2]:
     st.subheader("Baixar dados tratados")
 
-    st.info("Os downloads abaixo respeitam os **filtros da barra lateral** (quando aplicados).")
+    st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
     # função utilitária
     def _csv_bytes(_df: pd.DataFrame) -> bytes:
