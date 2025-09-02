@@ -272,7 +272,7 @@ Registros de **certificados de residência médica** (CNRM).
 # ---------------------------------------------------------------------
 
 with tabs[2]:
-    st.session_state["aba_ativa"] = "⬇️ Download"
+    st.session_state["aba_ativa"] = abas[2]
     st.subheader("📥 Baixar dados tratados")
 
     def consultar_schema_tabela():
@@ -291,7 +291,7 @@ with tabs[2]:
     c1, c2 = st.columns([1, 1])
 
     def manter_aba_download():
-        st.session_state["aba_ativa"] = "📥 Download"
+        st.session_state["aba_ativa"] = abas[2]
 
     with c1:
         st.markdown("**Consulte o dicionário com a estrutura dos dados raw**")
@@ -310,11 +310,11 @@ with tabs[2]:
     c3, c4 = st.columns([1, 1])
 
     with c3:
-        selected_programa = st.selectbox("Programas", options=programa_options, index=0)
-        selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0)
-        selected_regiao = st.selectbox("Região", options=regiao_options, index=0)
-        selected_uf = st.selectbox("UF", options=uf_options, index=0)
-        selected_validacao = st.selectbox("Validação", options=validacao_options, index=0)
+        selected_programa = st.selectbox("Programas", options=programa_options, index=0, key="selectbox_programa_download")
+        selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0, key="selected_instituicao_download")
+        selected_regiao = st.selectbox("Região", options=regiao_options, index=0, key="selected_regiao_download")
+        selected_uf = st.selectbox("UF", options=uf_options, index=0, key="selected_uf_download")
+        selected_validacao = st.selectbox("Validação", options=validacao_options, index=0, key="selected_validacao_")
 
     with c4:
         range_inicio = None
@@ -393,7 +393,7 @@ with tabs[2]:
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
     def manter_aba_download():
-        st.session_state["aba_ativa"] = "⬇️ Download"
+        st.session_state["aba_ativa"] = abas[2]
 
     if st.button("Consultar dados agregados", on_click=manter_aba_download):
         with st.spinner("⏳ Consultando dados no BigQuery..."):
@@ -426,7 +426,7 @@ with tabs[2]:
 # 4) Analytics
 # ---------------------------------------------------------------------
 with tabs[3]:
-
+    st.session_state["aba_ativa"] = abas[3]
     st.subheader("📈 Analytics")
 
     st.markdown("**Aplique filtros para personalizar os dados a serem baixados**")
@@ -575,8 +575,4 @@ with tabs[3]:
         top_prog = df.groupby("programa")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
         st.dataframe(top_prog.reset_index(), use_container_width=True)
 
-    with st.expander("📈 Qual a evolução ao longo do tempo por região?"):
-        # Exemplo com gráfico de linha por região
-        df_agg = df.groupby(["ano_termino", "regiao"])["qtd_certificados"].sum().reset_index()
-        fig = px.line(df_agg, x="ano_termino", y="qtd_certificados", color="regiao")
-        st.plotly_chart(fig, use_container_width=True)
+
