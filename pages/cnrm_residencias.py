@@ -570,14 +570,8 @@ if aba == "📈 Analytics":
     with st.expander("🏥 Quais instituições mais certificaram residentes?"):
         df_agrupado = df.groupby("instituicao", as_index=False)["qtd_certificados"].sum()
         df_agrupado = df_agrupado.sort_values(by="qtd_certificados", ascending=False)
-
-        fig = pareto_plotly(
-            df_agrupado,
-            col_categoria="instituicao",
-            col_valor="qtd_certificados",
-            titulo="Instituições com mais residentes certificados — Pareto"
-        )
-
+        
+        fig = pareto_plotly(df_agrupado, col="instituicao", valor="qtd_certificados")
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
