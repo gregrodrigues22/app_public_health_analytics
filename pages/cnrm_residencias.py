@@ -1,81 +1,84 @@
 # ---------------------------------------------------------------
 # Set up
 # ---------------------------------------------------------------
-import streamlit as st  
+import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
-from google.cloud import bigquery
 import pandas as pd
 import json
-from scipy.stats import linregress
-from plotly.subplots import make_subplots
-from plotly.colors import sequential
 import os
 from datetime import datetime
 import pytz
-from google.cloud import bigquery_storage
 from pathlib import Path
 
-# ---------------------------------------------------------------
-# Big Query
-# ---------------------------------------------------------------
-PROJECT_ID   = "escolap2p"
-BQ_LOCATION  = "southamerica-east1"  # sua tabela está nessa região
-TABLE_ID     = "escolap2p.base_siscnrm.residentes_raw"
+from google.cloud import bigquery
+from google.cloud import bigquery_storage
 
-# credenciais (iguais às suas)
+# ---------------------------------------------------------------
+# BigQuery (região e tabela)
+# ---------------------------------------------------------------
+PROJECT_ID  = "escolap2p"
+BQ_LOCATION = "southamerica-east1"
+TABLE_ID    = "escolap2p.base_siscnrm.residentes_raw"
+
+# grava credenciais no /tmp e exporta a env var
 with open("/tmp/keyfile.json", "w") as f:
     json.dump(st.secrets["bigquery"].to_dict(), f)
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/keyfile.json"
 
-# clients já com location; BQ Storage acelera o to_dataframe()
-client = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
-bqs    = bigquery_storage.BigQueryReadClient()
+# --- cacheia os clients para não recriar a cada rerun
+@st.cache_resource
+def get_clients():
+    bq  = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
+    bqs = bigquery_storage.BigQueryReadClient()
+    return bq, bqs
+
+client, bqs = get_clients()
 
 # ---------------------------------------------------------------
-# Aquisição de dados do BigQuery
+# Aquisição de dados do BigQuery (cacheado)
 # ---------------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
-def consultar_dados(amostra=False):
-    query = f"""
-        SELECT *
-        FROM `{TABLE_ID}`
-    """
-    # Para testar rápido, use amostra=True (depois mude para False)
+def consultar_dados(amostra: bool = False):
+    # (opcional) selecione só as colunas que usa no app para acelerar
+    # cols = ["certificado","medico","crm","programa","instituicao","uf","inicio","termino","data_emissao"]
+    # query = f"SELECT {', '.join(cols)} FROM `{TABLE_ID}`"
+    query = f"SELECT * FROM `{TABLE_ID}`"
+
     if amostra:
         query += "\nLIMIT 20000"
 
     job = client.query(query, location=BQ_LOCATION)
-    job.result(timeout=180)  # garante conclusão do job
+    job.result(timeout=180)
 
     df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
 
-    fuso_sp = pytz.timezone("America/Sao_Paulo")
-    ultima_atualizacao = datetime.now(fuso_sp)
-    return df, ultima_atualizacao
+    tz = pytz.timezone("America/Sao_Paulo")
+    return df, datetime.now(tz)
 
-# Executa a query e transforma em DataFrame
-# comece com amostra=True se estiver pesado, depois troque para False
-df, ultima_atualizacao = consultar_dados(amostra=True)
+# --- carregue uma vez e guarde no session_state (evita requery)
+if "df" not in st.session_state:
+    st.session_state["df"], st.session_state["ultima_atualizacao"] = consultar_dados(amostra=True)  # troque para False quando finalizar
+
+df = st.session_state["df"]
+ultima_atualizacao = st.session_state["ultima_atualizacao"]
 
 # ---------------------------------------------------------------
-# Config da página 
+# Config da página
 # ---------------------------------------------------------------
 st.set_page_config(layout="wide", page_title="📊 Public Health Analytics")
 
 # ---------------- Helpers para assets ----------------
 APP_DIR = Path(__file__).resolve().parent
-ASSETS = APP_DIR / "assets"
+ASSETS = APP_DIR.parent / "assets"   # <--- ajuste aqui
 
 def first_existing(*relative_paths: str) -> Path | None:
-    """Devolve o primeiro arquivo que existir em assets/ dentre as opções."""
     for rel in relative_paths:
         p = ASSETS / rel
         if p.exists():
             return p
     return None
 
-# Tenta várias extensões (evita erro se trocar png/jpg)
 LOGO = first_existing("logo.png", "logo.jpg", "logo.jpeg", "logo.webp")
 FOTO = first_existing("foto_gregorio.jpg", "foto_gregorio.png", "foto_gregorio.jpeg", "foto_gregorio.webp")
 
