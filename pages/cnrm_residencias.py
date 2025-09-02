@@ -404,22 +404,22 @@ with tabs[3]:
     #    colA.plotly_chart(fig_p, use_container_width=True)
 
     # Top Instituições
-    if "instituicao" in dff.columns:
-        top_inst = (dff["instituicao"]
-                    .value_counts()
-                    .reset_index()
-                    .rename(columns={"index": "instituicao", "instituicao": "qtd"})
-                    .head(15))
-        fig_i = go.Figure(go.Bar(x=top_inst["qtd"], y=top_inst["instituicao"], orientation="h"))
-        fig_i.update_layout(title="Top 15 Instituições (por registros)",
-                            xaxis_title="Quantidade", yaxis_title="", height=450)
-        colB.plotly_chart(fig_i, use_container_width=True)
+    #if "instituicao" in dff.columns:
+    #    top_inst = (dff["instituicao"]
+    #                .value_counts()
+    #                .reset_index()
+    #                .rename(columns={"index": "instituicao", "instituicao": "qtd"})
+    #                .head(15))
+    #    fig_i = go.Figure(go.Bar(x=top_inst["qtd"], y=top_inst["instituicao"], orientation="h"))
+    #    fig_i.update_layout(title="Top 15 Instituições (por registros)",
+    #                        xaxis_title="Quantidade", yaxis_title="", height=450)
+    #    colB.plotly_chart(fig_i, use_container_width=True)
 
     # Distribuição por UF
-    if "uf" in dff.columns:
-        dist_uf = dff["uf"].value_counts().reset_index().rename(columns={"index": "uf", "uf": "qtd"})
-        fig_uf = go.Figure(go.Bar(x=dist_uf["uf"], y=dist_uf["qtd"]))
-        fig_uf.update_layout(title="Distribuição por UF", xaxis_title="UF", yaxis_title="Quantidade", height=350)
-        st.plotly_chart(fig_uf, use_container_width=True)
+    #if "uf" in dff.columns:
+    #    dist_uf = dff["uf"].value_counts().reset_index().rename(columns={"index": "uf", "uf": "qtd"})
+    #    fig_uf = go.Figure(go.Bar(x=dist_uf["uf"], y=dist_uf["qtd"]))
+    #    fig_uf.update_layout(title="Distribuição por UF", xaxis_title="UF", yaxis_title="Quantidade", height=350)
+    #    st.plotly_chart(fig_uf, use_container_width=True)
 
     st.caption("Obs.: indicadores e gráficos respeitam os filtros selecionados.")
