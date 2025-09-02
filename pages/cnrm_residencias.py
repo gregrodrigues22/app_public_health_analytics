@@ -516,3 +516,56 @@ with tabs[3]:
         return df
     
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            label="🎓 Total de Residentes Certificados",
+            value=f"{df['qtd_certificados'].sum():,}".replace(",", "."),
+            help="Soma total de certificados válidos emitidos"
+        )
+
+    with col2:
+        st.metric(
+            label="🏥 Total de Instituições Certificadoras",
+            value=f"{df['instituicao'].nunique():,}".replace(",", "."),
+            help="Número único de instituições com residentes certificados"
+        )
+
+    with col3:
+        st.metric(
+            label="📘 Total de Programas",
+            value=f"{df['programa'].nunique():,}".replace(",", "."),
+            help="Número único de programas diferentes com residentes certificados"
+        )
+
+    with col4:
+        st.metric(
+            label="📅 Período (anos)",
+            value=f"{df['ano_inicio'].min()} - {df['ano_termino'].max()}",
+            help="Intervalo de anos coberto pelos dados"
+        )
+
+    st.markdown("---")
+
+    with st.expander("📊 Qual a distribuição de certificados por ano?"):
+        st.bar_chart(df.groupby("ano_termino")["qtd_certificados"].sum())
+
+    with st.expander("🗺️ Como os certificados se distribuem por UF?"):
+        grafico_uf = df.groupby("uf")["qtd_certificados"].sum().sort_values(ascending=False)
+        st.bar_chart(grafico_uf)
+
+    with st.expander("🏥 Quais instituições mais certificaram residentes?"):
+        top_inst = df.groupby("instituicao")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
+        st.dataframe(top_inst.reset_index(), use_container_width=True)
+
+    with st.expander("🎓 Quais os programas mais comuns?"):
+        top_prog = df.groupby("programa")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
+        st.dataframe(top_prog.reset_index(), use_container_width=True)
+
+    with st.expander("📈 Qual a evolução ao longo do tempo por região?"):
+        # Exemplo com gráfico de linha por região
+        df_agg = df.groupby(["ano_termino", "regiao"])["qtd_certificados"].sum().reset_index()
+        fig = px.line(df_agg, x="ano_termino", y="qtd_certificados", color="regiao")
+        st.plotly_chart(fig, use_container_width=True)
