@@ -19,34 +19,44 @@ from pathlib import Path
 # ---------------------------------------------------------------
 # Big Query
 # ---------------------------------------------------------------
-PROJECT_ID = "escolap2p" 
-TABLE_ID = "escolap2p.base_siscnrm.residentes_raw" 
+PROJECT_ID   = "escolap2p"
+BQ_LOCATION  = "southamerica-east1"  # sua tabela está nessa região
+TABLE_ID     = "escolap2p.base_siscnrm.residentes_raw"
 
+# credenciais (iguais às suas)
 with open("/tmp/keyfile.json", "w") as f:
     json.dump(st.secrets["bigquery"].to_dict(), f)
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/keyfile.json"
 
-client = bigquery.Client()
+# clients já com location; BQ Storage acelera o to_dataframe()
+client = bigquery.Client(project=PROJECT_ID, location=BQ_LOCATION)
+bqs    = bigquery_storage.BigQueryReadClient()
 
 # ---------------------------------------------------------------
-# Aquisição de dados do Big Query
+# Aquisição de dados do BigQuery
 # ---------------------------------------------------------------
-@st.cache_data(ttl=3600)
-def consultar_dados():
-    client = bigquery.Client()
-    query = """
-        SELECT
-            *
-        FROM
-            `escolap2p.base_siscnrm.residentes_raw`
+@st.cache_data(ttl=3600, show_spinner=False)
+def consultar_dados(amostra=False):
+    query = f"""
+        SELECT *
+        FROM `{TABLE_ID}`
     """
-    df = client.query(query).to_dataframe()
+    # Para testar rápido, use amostra=True (depois mude para False)
+    if amostra:
+        query += "\nLIMIT 20000"
+
+    job = client.query(query, location=BQ_LOCATION)
+    job.result(timeout=180)  # garante conclusão do job
+
+    df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
+
     fuso_sp = pytz.timezone("America/Sao_Paulo")
     ultima_atualizacao = datetime.now(fuso_sp)
     return df, ultima_atualizacao
 
 # Executa a query e transforma em DataFrame
-df, ultima_atualizacao = consultar_dados()
+# comece com amostra=True se estiver pesado, depois troque para False
+df, ultima_atualizacao = consultar_dados(amostra=True)
 
 # ---------------------------------------------------------------
 # Config da página 
