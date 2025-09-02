@@ -265,9 +265,9 @@ Registros de **certificados de residência médica** (CNRM).
 # ---------------------------------------------------------------------
 
 with tabs[2]:
+
     st.session_state["aba_ativa"] = "Download"
     st.subheader("📥 Baixar dados tratados")
-    st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
     def consultar_schema_tabela():
         table = client.get_table(TABLE_ID)
@@ -284,24 +284,30 @@ with tabs[2]:
     def _csv_bytes(_df: pd.DataFrame) -> bytes:
         return _df.to_csv(index=False).encode("utf-8")
 
-    st.download_button(
-        "📄 Baixar dicionário (CSV)",
-        data=dict_cols.to_csv(index=False).encode('utf-8'),
-        file_name=f"crnm_dicionario_{datetime.now().date()}.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
-
     c1, c2 = st.columns([1, 1])
 
     with c1:
+        st.write("Veja o dicionário de dados baixáveis")
+        st.download_button(
+            "📄 Baixar dicionário (CSV)",
+            data=dict_cols.to_csv(index=False).encode('utf-8'),
+            file_name=f"crnm_dicionario_{datetime.now().date()}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    # Filtros
+    st.write("Aplique os filtros se desejável")
+    c3, c4 = st.columns([1, 1])
+
+    with c3:
         selected_programa = st.selectbox("Programas", options=programa_options, index=0)
         selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0)
         selected_regiao = st.selectbox("Região", options=regiao_options, index=0)
         selected_uf = st.selectbox("UF", options=uf_options, index=0)
         selected_validacao = st.selectbox("Validação", options=validacao_options, index=0)
 
-    with c2:
+    with c4:
         range_inicio = None
         range_termino = None
 
@@ -375,6 +381,8 @@ with tabs[2]:
         df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
 
         return df
+    
+    st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
     
     if st.button("Consultar dados agregados"):
         with st.spinner("⏳ Consultando dados no BigQuery..."):
