@@ -517,7 +517,7 @@ with tabs[3]:
     
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
-    df_resultado = consultar_agrupado_por_filtros(
+    df = consultar_agrupado_por_filtros(
         programa=selected_programa,
         instituicao=selected_instituicao,
         regiao=selected_regiao,
