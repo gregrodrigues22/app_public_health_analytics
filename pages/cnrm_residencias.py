@@ -433,11 +433,11 @@ with tabs[3]:
     c3, c4 = st.columns([1, 1])
 
     with c3:
-        selected_programa = st.selectbox("Programas", options=programa_options, index=0)
-        selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0)
-        selected_regiao = st.selectbox("Região", options=regiao_options, index=0)
-        selected_uf = st.selectbox("UF", options=uf_options, index=0)
-        selected_validacao = st.selectbox("Validação", options=validacao_options, index=0)
+        selected_programa = st.selectbox("Programas", options=programa_options, index=0, key="selectbox_programa_analytics")
+        selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0, key="selectbox_instituicao_analytics")
+        selected_regiao = st.selectbox("Região", options=regiao_options, index=0, key="selectbox_regiao_analytics")
+        selected_uf = st.selectbox("UF", options=uf_options, index=0, key="selectbox_uf_analytics")
+        selected_validacao = st.selectbox("Validação", options=validacao_options, index=0, key="selectbox_validacao_analytics")
 
     with c4:
         range_inicio = None
@@ -451,7 +451,8 @@ with tabs[3]:
                     "Período (ano de início)", 
                     min_inicio, 
                     max_inicio, 
-                    (min_inicio, max_inicio)
+                    (min_inicio, max_inicio),
+                    key="slider_inicio_analytics"
                 )
 
         if anos_termino:
@@ -462,7 +463,8 @@ with tabs[3]:
                     "Período (ano de término)", 
                     min_termino, 
                     max_termino, 
-                    (min_termino, max_termino)
+                    (min_termino, max_termino),
+                    key="slider_termino_analytics"
                 )
 
     @st.cache_data(ttl=1800, show_spinner=True)
