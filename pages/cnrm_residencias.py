@@ -290,17 +290,21 @@ with tabs[2]:
 
     c1, c2 = st.columns([1, 1])
 
+    def manter_aba_download():
+        st.session_state["aba_ativa"] = "📥 Download"
+
     with c1:
         st.markdown("**Consulte o dicionário com a estrutura dos dados**")
-        if st.download_button(
+        st.download_button(
             "📄 Baixar dicionário (CSV)",
             data=dict_cols.to_csv(index=False).encode('utf-8'),
             file_name=f"crnm_dicionario_{datetime.now().date()}.csv",
             mime="text/csv",
             use_container_width=True,
-            key="botao_dicionario"
+            key="botao_dicionario",
+            on_click=manter_aba_download
         ):
-            st.session_state["aba_ativa"] = "⬇️ Download"  
+            st.session_state["aba_ativa"] = "⬇️ Download"
 
     # Filtros
     st.markdown("**Aplique filtros para personalizar os dados a serem baixados**")
@@ -390,7 +394,8 @@ with tabs[2]:
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
     if st.button("Consultar dados agregados"):
-        st.session_state["aba_ativa"] = "⬇️ Download"  # já está certo
+        st.session_state["aba_ativa"] = "⬇️ Download"
+        st.experimental_rerun()
         with st.spinner("⏳ Consultando dados no BigQuery..."):
             df_resultado = consultar_agrupado_por_filtros(
                 programa=selected_programa,
