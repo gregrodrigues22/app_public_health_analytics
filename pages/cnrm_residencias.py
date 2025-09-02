@@ -170,7 +170,7 @@ def consultar_filtros_com_anos():
     return filtros, datetime.now(pytz.timezone("America/Sao_Paulo"))
 
 if "filtros" not in st.session_state:
-    with st.spinner("⏳ Carregando filtros disponíveis..."):
+    with st.spinner("⏳ Carregando dados..."):
         st.session_state["filtros"], st.session_state["ultima_atualizacao"] = consultar_filtros_com_anos()
 
 filtros = st.session_state["filtros"]
@@ -191,12 +191,20 @@ anos_termino        = filtros.get("anos_termino", [])
 # =====================================================================
 # Layout – Abas
 # =====================================================================
+# Defina uma chave de controle para a aba ativa
+if "aba_ativa" not in st.session_state:
+    st.session_state["aba_ativa"] = "Download"
+    
 tabs = st.tabs(["📺 Instruções de uso", "🧱 Metodologia & Dados", "⬇️ Download", "📈 Analytics"])
 
 # ---------------------------------------------------------------------
 # 1) Instruções
 # ---------------------------------------------------------------------
 with tabs[0]:
+
+    if st.session_state["aba_ativa"] == "📺 Instruções de uso":
+        st.write("Conteúdo da aba Instruções")
+
     st.subheader("Como usar")
     st.markdown("""
 - Na aba **Metodologia** você pode encontrar detalhes de como os dados foram tratados, plotados e analisados.
@@ -211,6 +219,10 @@ with tabs[0]:
 # 2) Metodologia
 # ---------------------------------------------------------------------
 with tabs[1]:
+
+    if st.session_state["aba_ativa"] == "🧱 Metodologia & Dados":
+        st.write("Conteúdo da aba Metodologia")
+
     st.subheader("Metodologia, engenharia de dados e fontes")
 
     c1, c2 = st.columns([1.2, 1])
@@ -229,7 +241,7 @@ Registros de **certificados de residência médica** (CNRM).
 - Campos textuais (`programa`, `instituicao`, `uf`) padronizados.  
 - Geração de colunas derivadas: `ano_inicio`, `ano_termino`.  
 - Geração de campo de região para identificar região do país segundo `uf`.
-- Geração de campo de validação: se linha não contiver data de ínicio OU data de término OU programa OU instituição OU nome do médico é definido como não validado. 
+- Geração de campo de validação através de verificação de campos válidos: se linha não contiver data de ínicio OU data de término OU programa OU instituição OU nome do médico é definido como não validado. Linhas não validadas são descartadas para análise.
 
 **Limitações conhecidas**  
 - Registros com dados inválidos.  
@@ -253,8 +265,32 @@ Registros de **certificados de residência médica** (CNRM).
 # ---------------------------------------------------------------------
 
 with tabs[2]:
-    st.subheader("Baixar dados tratados")
+    st.session_state["aba_ativa"] = "Download"
+    st.subheader("📥 Baixar dados tratados")
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
+
+    def consultar_schema_tabela():
+        table = client.get_table(TABLE_ID)
+        schema_info = [{
+            "coluna": field.name,
+            "tipo": field.field_type,
+            "modo": field.mode
+        } for field in table.schema]
+        return pd.DataFrame(schema_info)
+
+    dict_cols = consultar_schema_tabela()
+
+    # função utilitária
+    def _csv_bytes(_df: pd.DataFrame) -> bytes:
+        return _df.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        "📄 Baixar dicionário (CSV)",
+        data=dict_cols.to_csv(index=False).encode('utf-8'),
+        file_name=f"crnm_dicionario_{datetime.now().date()}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 
     c1, c2 = st.columns([1, 1])
 
@@ -354,45 +390,16 @@ with tabs[2]:
         st.success("✅ Consulta finalizada com sucesso!")
         st.dataframe(df_resultado)
 
-    def consultar_schema_tabela():
-        table = client.get_table(TABLE_ID)
-        schema_info = [{
-            "coluna": field.name,
-            "tipo": field.field_type,
-            "modo": field.mode
-        } for field in table.schema]
-        return pd.DataFrame(schema_info)
-    
-    dict_cols = consultar_schema_tabela()
-
-    # função utilitária
-    def _csv_bytes(_df: pd.DataFrame) -> bytes:
-        return _df.to_csv(index=False).encode("utf-8")
-
-    # Botões de download
-    colA, colB = st.columns(2)
-
-    with colA:
-        dict_cols = consultar_schema_tabela()
+    if 'df_resultado' in locals() and not df_resultado.empty:
         st.download_button(
-            "📥 Baixar dicionário (CSV)",
-            data=_csv_bytes(dict_cols),
-            file_name=f"cnrm_dicionario_{datetime.now().date()}.csv",
+            "📥 Baixar dados filtrados (CSV)",
+            data=_csv_bytes(df_resultado),
+            file_name=f"cnrm_residentes_filtrado_{datetime.now().date()}.csv",
             mime="text/csv",
             use_container_width=True,
         )
-    
-    with colB:
-        if 'df_resultado' in locals() and not df_resultado.empty:
-            st.download_button(
-                "📥 Baixar dados filtrados (CSV)",
-                data=_csv_bytes(df_resultado),
-                file_name=f"cnrm_residentes_filtrado_{datetime.now().date()}.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-        else:
-            st.warning("⚠️ Realize uma consulta antes de baixar os dados.")
+    else:
+        st.warning("⚠️ Realize uma consulta antes de baixar os dados.")
 
 # ---------------------------------------------------------------------
 # 4) Analytics
