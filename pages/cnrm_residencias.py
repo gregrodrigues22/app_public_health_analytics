@@ -191,19 +191,21 @@ anos_termino        = filtros.get("anos_termino", [])
 # =====================================================================
 # Layout – Abas
 # =====================================================================
-# Defina uma chave de controle para a aba ativa
-if "aba_ativa" not in st.session_state:
-    st.session_state["aba_ativa"] = "Download"
     
-tabs = st.tabs(["📺 Instruções de uso", "🧱 Metodologia & Dados", "⬇️ Download", "📈 Analytics"])
+abas = ["📺 Instruções de uso", "🧱 Metodologia & Dados", "⬇️ Download", "📈 Analytics"]
+
+# Define aba inicial se não existir
+if "aba_ativa" not in st.session_state:
+    st.session_state["aba_ativa"] = abas[0]  # default: primeira aba
+
+# Cria tabs e seleciona a ativa
+tabs = st.tabs(tabs)
+aba_idx = abas.index(st.session_state["aba_ativa"])
 
 # ---------------------------------------------------------------------
 # 1) Instruções
 # ---------------------------------------------------------------------
 with tabs[0]:
-
-    if st.session_state["aba_ativa"] == "📺 Instruções de uso":
-        st.write("Conteúdo da aba Instruções")
 
     st.subheader("Como usar")
     st.markdown("""
@@ -219,9 +221,6 @@ with tabs[0]:
 # 2) Metodologia
 # ---------------------------------------------------------------------
 with tabs[1]:
-
-    if st.session_state["aba_ativa"] == "🧱 Metodologia & Dados":
-        st.write("Conteúdo da aba Metodologia")
 
     st.subheader("Metodologia, engenharia de dados e fontes")
 
@@ -266,7 +265,7 @@ Registros de **certificados de residência médica** (CNRM).
 
 with tabs[2]:
 
-    st.session_state["aba_ativa"] = "Download"
+    st.session_state["aba_ativa"] = "⬇️ Download"
     st.subheader("📥 Baixar dados tratados")
 
     def consultar_schema_tabela():
@@ -395,6 +394,7 @@ with tabs[2]:
                 ano_termino_range=range_termino,
             )
         st.success("✅ Consulta finalizada com sucesso!")
+        st.metric("Certificados válidos", df_resultado['qtd_certificados'].sum(), border=True)
         st.dataframe(df_resultado)
 
     if 'df_resultado' in locals() and not df_resultado.empty:
