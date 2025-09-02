@@ -13,12 +13,14 @@ from plotly.colors import sequential
 import os
 from datetime import datetime
 import pytz
+from google.cloud import bigquery_storage
+from pathlib import Path
 
 # ---------------------------------------------------------------
 # Big Query
 # ---------------------------------------------------------------
 PROJECT_ID = "escolap2p" 
-TABLE_ID = "escolap2p.cliente_espacoaurium.crm" 
+TABLE_ID = "escolap2p.base_siscnrm.residentes_raw" 
 
 with open("/tmp/keyfile.json", "w") as f:
     json.dump(st.secrets["bigquery"].to_dict(), f)
