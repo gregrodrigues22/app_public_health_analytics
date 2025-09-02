@@ -72,7 +72,9 @@ def pareto_plotly(
     # 1) Checamos colunas obrigatórias
     if col_categoria not in df_raw.columns:
         raise ValueError(f"Coluna de categoria '{col_categoria}' não encontrada no DataFrame.")
-    if (col_id is not None) and (col_id not in df_raw.columns):
+    if col_valor is not None and col_valor not in df_raw.columns:
+        raise ValueError(f"Você informou col_valor='{col_valor}', mas essa coluna não existe no DataFrame.")
+    if col_valor is None and col_id is not None and col_id not in df_raw.columns:
         raise ValueError(f"Você informou col_id='{col_id}', mas essa coluna não existe no DataFrame.")
 
     # 2) Definimos o método de contagem (didático):
@@ -87,11 +89,13 @@ def pareto_plotly(
     # ====================================================
     # 1) Agrupamos por categoria e computamos a contagem conforme método escolhido
     if col_valor is not None:
-        # Usa soma direta (caso a base já esteja agregada)
+        # Se col_valor for passado, usamos a soma direta (base já agregada)
         grp = df_raw.groupby(col_categoria, dropna=False)[col_valor].sum()
-    elif metodo_contagem == "nunique" and col_id is not None:
+    elif col_id is not None and metodo_contagem == "nunique":
+        # Conta IDs distintos por categoria
         grp = df_raw.groupby(col_categoria, dropna=False)[col_id].nunique()
     else:
+        # Conta linhas por categoria
         grp = df_raw.groupby(col_categoria, dropna=False).size()
 
     # 2) Renomeamos para "count" e transformamos em DataFrame (boa prática para manipular depois)
