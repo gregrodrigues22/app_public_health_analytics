@@ -287,7 +287,7 @@ with tabs[2]:
     c1, c2 = st.columns([1, 1])
 
     with c1:
-        st.markdown("### 📘 Consulte o dicionário com a estrutura dos dados")
+        st.markdown("**Consulte o dicionário com a estrutura dos dados**")
         st.download_button(
             "📄 Baixar dicionário (CSV)",
             data=dict_cols.to_csv(index=False).encode('utf-8'),
@@ -297,7 +297,7 @@ with tabs[2]:
         )
 
     # Filtros
-    st.markdown("### 🎯 Aplique filtros para personalizar os dados a serem baixados")
+    st.markdown("**Aplique filtros para personalizar os dados a serem baixados**")
     c3, c4 = st.columns([1, 1])
 
     with c3:
@@ -368,8 +368,7 @@ with tabs[2]:
         query = f"""
         SELECT
         {select_clause},
-        COUNT(DISTINCT certificado) AS qtd_certificados,
-        COUNT(DISTINCT medico) AS qtd_medicos
+        COUNT(DISTINCT certificado) AS qtd_certificados
         FROM `{TABLE_ID}`
         {where_clause}
         GROUP BY {select_clause}
