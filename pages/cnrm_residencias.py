@@ -191,37 +191,46 @@ anos_termino        = filtros.get("anos_termino", [])
 # =====================================================================
 # Layout – Abas
 # =====================================================================
-    
-# --- Estilo CSS customizado ---
-st.markdown("""
-<style>
-.radio-tabs {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-}
 
-.radio-tab-button {
-    padding: 10px 20px;
-    border-radius: 8px;
-    border: 1px solid #CCC;
-    cursor: pointer;
-    background-color: #f9f9f9;
-    font-weight: bold;
-    transition: 0.2s;
-}
+active_tab = tabs(["📺 Intruções de uso", "🧱 Metodologia", "📥 Downloads", "📈 Analytics"])
 
-.radio-tab-button:hover {
-    background-color: #eaeaea;
-}
+def custom_tabs(tabs_list, default=0, cor="rgb(0,161,178)"):
+    import streamlit as st
+    active_tab = st.radio("", tabs_list, index=default)
+    selected = tabs_list.index(active_tab) + 1
 
-.radio-tab-selected {
-    background-color: #00a1b2;
-    color: white;
-    border: 1px solid #00818f;
-}
-</style>
-""", unsafe_allow_html=True)
+    st.markdown(f"""
+        <style>
+        div[role=radiogroup] {{
+            border-bottom: 2px solid rgba(49, 51, 63, 0.1);
+            flex-direction: row;
+            gap: 2rem;
+        }}
+        div[role=radiogroup] > label > div:first-of-type {{
+            display: none
+        }}
+        div[role=radiogroup] label {{
+            padding-bottom: 0.5em;
+            border-radius: 0;
+            position: relative;
+            top: 3px;
+            cursor: pointer;
+        }}
+        div[role=radiogroup] label p {{
+            font-weight: 500;
+        }}
+        div[role=radiogroup] label:nth-child({selected}) {{
+            border-bottom: 3px solid {cor};
+        }}
+        div[role=radiogroup] label:nth-child({selected}) p {{
+            color: {cor};
+        }}
+        </style>
+    """, unsafe_allow_html=True)
+
+    return active_tab
+
+aba = custom_tabs(["📺 Intruções de uso", "🧱 Metodologia", "📥 Downloads", "📈 Analytics"], cor="rgb(0,161,178)")
 
 # --- Controle de abas com radio ---
 aba = st.radio(
@@ -295,7 +304,6 @@ Registros de **certificados de residência médica** (CNRM).
 # ---------------------------------------------------------------------
 
 if aba == "📥 Downloads":
-    st.session_state["aba_ativa"] = abas[2]
     st.subheader("📥 Baixar dados tratados")
 
     def consultar_schema_tabela():
@@ -313,9 +321,6 @@ if aba == "📥 Downloads":
 
     c1, c2 = st.columns([1, 1])
 
-    def manter_aba_download():
-        st.session_state["aba_ativa"] = abas[2]
-
     with c1:
         st.markdown("**Consulte o dicionário com a estrutura dos dados raw**")
         st.download_button(
@@ -324,8 +329,7 @@ if aba == "📥 Downloads":
             file_name=f"crnm_dicionario_{datetime.now().date()}.csv",
             mime="text/csv",
             use_container_width=True,
-            key="botao_dicionario",
-            on_click=manter_aba_download
+            key="botao_dicionario"
             )
 
     # Filtros
@@ -415,7 +419,10 @@ if aba == "📥 Downloads":
     
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
-    if st.button("Consultar dados agregados", on_click=manter_aba_download):
+    def manter_aba_download():
+        st.session_state["aba_ativa"] = abas[2]
+
+    if st.button("Consultar dados agregados"):
         with st.spinner("⏳ Consultando dados no BigQuery..."):
             df_resultado = consultar_agrupado_por_filtros(
                 programa=selected_programa,
