@@ -407,7 +407,8 @@ with tabs[2]:
                 ano_termino_range=range_termino,
             )
         st.success("✅ Consulta finalizada com sucesso!")
-        st.metric("Certificados válidos", df_resultado['qtd_certificados'].sum(), border=True)
+        valor_formatado = f"{df_resultado['qtd_certificados'].sum():,}".replace(",", ".")
+        st.metric("Certificados válidos", valor_formatado, border=True)
         st.dataframe(df_resultado)
 
     if 'df_resultado' in locals() and not df_resultado.empty:
@@ -425,4 +426,91 @@ with tabs[2]:
 # 4) Analytics
 # ---------------------------------------------------------------------
 with tabs[3]:
-    st.subheader("Visão analítica")
+
+    st.subheader("📈 Analytics")
+
+    st.markdown("**Aplique filtros para personalizar os dados a serem baixados**")
+    c3, c4 = st.columns([1, 1])
+
+    with c3:
+        selected_programa = st.selectbox("Programas", options=programa_options, index=0)
+        selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0)
+        selected_regiao = st.selectbox("Região", options=regiao_options, index=0)
+        selected_uf = st.selectbox("UF", options=uf_options, index=0)
+        selected_validacao = st.selectbox("Validação", options=validacao_options, index=0)
+
+    with c4:
+        range_inicio = None
+        range_termino = None
+
+        if anos_inicio:
+            anos_inicio_limpos = sorted(set(int(ano) for ano in anos_inicio if pd.notnull(ano) and str(ano).isdigit()))
+            if anos_inicio_limpos:
+                min_inicio, max_inicio = min(anos_inicio_limpos), max(anos_inicio_limpos)
+                range_inicio = st.slider(
+                    "Período (ano de início)", 
+                    min_inicio, 
+                    max_inicio, 
+                    (min_inicio, max_inicio)
+                )
+
+        if anos_termino:
+            anos_termino_limpos = sorted(set(int(ano) for ano in anos_termino if pd.notnull(ano) and str(ano).isdigit()))
+            if anos_termino_limpos:
+                min_termino, max_termino = min(anos_termino_limpos), max(anos_termino_limpos)
+                range_termino = st.slider(
+                    "Período (ano de término)", 
+                    min_termino, 
+                    max_termino, 
+                    (min_termino, max_termino)
+                )
+
+    @st.cache_data(ttl=1800, show_spinner=True)
+    def consultar_agrupado_por_filtros(
+        programa=None,
+        instituicao=None,
+        regiao=None,
+        uf=None,
+        validacao=None,
+        ano_inicio_range=None,
+        ano_termino_range=None
+    ):
+        condicoes = []
+        if programa and programa != "(Todos)":
+            condicoes.append(f"programa = '{programa}'")
+        if instituicao and instituicao != "(Todas)":
+            condicoes.append(f"instituicao = '{instituicao}'")
+        if regiao and regiao != "(Todas)":
+            condicoes.append(f"regiao = '{regiao}'")
+        if uf and uf != "(Todas)":
+            condicoes.append(f"uf = '{uf}'")
+        if validacao and validacao != "(Todas)":
+            condicoes.append(f"validacao = '{validacao}'")
+        if ano_inicio_range:
+            condicoes.append(f"ano_inicio BETWEEN {ano_inicio_range[0]} AND {ano_inicio_range[1]}")
+
+        if ano_termino_range:
+            condicoes.append(f"ano_termino BETWEEN {ano_termino_range[0]} AND {ano_termino_range[1]}")
+
+        where_clause = "WHERE " + " AND ".join(condicoes) if condicoes else ""
+
+        group_dims = ["regiao", "uf", "instituicao", "programa","ano_inicio","ano_termino"]
+        select_clause = ", ".join(group_dims)
+
+        query = f"""
+        SELECT
+        {select_clause},
+        COUNT(DISTINCT certificado) AS qtd_certificados
+        FROM `{TABLE_ID}`
+        {where_clause}
+        GROUP BY {select_clause}
+        ORDER BY qtd_certificados DESC
+        """
+
+        job = client.query(query, location=BQ_LOCATION)
+        job.result(timeout=180)
+        df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
+
+        return df
+    
+    st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
