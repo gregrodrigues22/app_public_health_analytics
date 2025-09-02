@@ -181,9 +181,11 @@ if df is None or df.empty:
     st.stop()
 
 # --- Opções de Filtros
-programa_options = ["(Todos)"] + sorted(df["programa"].dropna().unique().tolist())
-instituicao_options = ["(Todos)"] + sorted(df["instituicao"].dropna().unique().tolist())
-uf_options = ["(Todos)"] + sorted(df["uf"].dropna().unique().tolist())
+programa_options    = ["(Todos)"]  + sorted(df["programa"].dropna().unique().tolist())
+instituicao_options = ["(Todas)"]  + sorted(df["instituicao"].dropna().unique().tolist())
+regiao_options      = ["(Todas)"]  + sorted(df["regiao"].dropna().unique().tolist())
+uf_options          = ["(Todas)"]  + sorted(df["uf"].dropna().unique().tolist())
+validacao_options   = ["(Todas)"]  + sorted(df["validacao"].dropna().unique().tolist())
 
 # =====================================================================
 # Layout – Abas
@@ -249,6 +251,8 @@ Registros de **certificados de residência médica** (CNRM).
 # ---------------------------------------------------------------------
 # 3) Download
 # ---------------------------------------------------------------------
+dff = df.copy()
+
 with tabs[2]:
     st.subheader("Baixar dados tratados")
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
@@ -257,74 +261,41 @@ with tabs[2]:
 
     with c1:
 
-        selected_programa = st.selectbox(
-            "Programas",
-            options=programa_options,
-            index=0  # "(Todos)" vem selecionado por padrão
-            )
-
+        selected_programa = st.selectbox("Programas",options=programa_options,index=0)
         if selected_programa != "(Todos)":
             dff = dff[dff["programa"] == selected_programa]
 
+        selected_instituicao = st.selectbox("Instituição",options=instituicao_options,index=0)
+        if selected_instituicao != "(Todas)":
+            dff = dff[dff["instituicao"] == selected_instituicao]
 
+        selected_regiao = st.selectbox("Região",options=regiao_options,index=0)
+        if selected_regiao != "(Todas)":
+            dff = dff[dff["regiao"] == selected_regiao]
 
-st.write("You selected:", option)
-programa_options = sorted(df['programa'].dropna().unique().tolist())
-instituicao_options = df['instituicao'].dropna().unique().tolist()
-uf_options = df['uf'].dropna().unique().tolist()
-local_atendimento_options = df['LOCAL_ATENDIMENTO'].dropna().unique().tolist()
-ano_inicio_options = sorted(df['ano_inicio'].dropna().unique().tolist(), reverse=True) # Ordena do mais novo para o mais antigo
-ano_termino_options = sorted(df['ano_termino'].dropna().unique().tolist())
+        selected_uf = st.selectbox("UF",options=uf_options,index=0)
+        if selected_uf != "(Todas)":
+            dff = dff[dff["uf"] == selected_uf]
 
-    selected_ano_int = st.multiselect("Ano da internação",
-        options=programa_options,
-        default=programa_options
-    )
-    selected_mes_int = st.multiselect(
-        "Mês da internação",
-        options=meses_options,
-        default=meses_options
-    )
-    selected_quintil_custo = st.multiselect(
-        "Quintil de custo",
-        options=quintil_custo_options,
-        default=quintil_custo_options
-    )
+        selected_validacao = st.selectbox("Validação",options=validacao_options,index=0)
+        if selected_validacao != "(Todas)":
+            dff = dff[dff["validacao"] == selected_validacao]
 
-    filtros_obrigatorios = {
-    "Faixa Etária": selected_faixa_etaria,
-    "Sexo": selected_sexo,
-    "Tipo de Internamento": selected_tipo_internamento,
-    "Local de Atendimento": selected_local_atendimento,
-    "Ano da Internação": selected_ano_int,
-    "Mês da Internação": selected_mes_int,
-    "Quintil de Custo": selected_quintil_custo,
-    "Capítulo CID": selected_capitulo_cid,
-    "Tipo ICSAP": selected_tipo_icsap,
-    "Estabelecimento (CNES)": selected_cnes,
-    "Tipo de Gestão": selected_tipo_gestao,
-    "Tipo de Vínculo SUS": selected_tipo_vinculo
-    }
+    with c2:
 
-    for nome, valor in filtros_obrigatorios.items():
-        if not valor:
-            st.warning(f"⚠️ Por favor, selecione pelo menos uma opção para **{nome}**.")
-            st.stop()
-            
-    df = df[
-        (df['FAIXA_ETARIA'].isin(selected_faixa_etaria)) &
-        (df['SEXO_DESC'].isin(selected_sexo)) &
-        (df['TIPO_INTERNAMENTO'].isin(selected_tipo_internamento)) &
-        (df['LOCAL_ATENDIMENTO'].isin(selected_local_atendimento)) &
-        (df['ANO_INT'].isin(selected_ano_int)) &
-        (df['MES_INT'].isin(selected_mes_int)) &
-        (df['QUINTIL_CUSTO'].isin(selected_quintil_custo)) &
-        (df['capitulo'].isin(selected_capitulo_cid)) &
-        (df['icsap'].isin(selected_tipo_icsap)) &
-        (df['CNES'].isin(selected_cnes)) &
-        (df['TIPO_GESTAO'].isin(selected_tipo_gestao)) &
-        (df['TIPO_VINC_SUS'].isin(selected_tipo_vinculo))
-    ]
+        if "ano_inicio" in dff.columns and dff["ano_inicio"].notna().any():
+            min_y = int(dff["ano_inicio"].min())
+            max_y = int(dff["ano_inicio"].max())
+            year_range = st.slider("Período (ano de início)", min_y, max_y, (min_y, max_y))
+            dff = dff[(dff["ano_inicio"] >= year_range[0]) & (dff["ano_inicio"] <= year_range[1])]
+
+        if "ano_termino" in dff.columns and dff["ano_termino"].notna().any():
+            min_y = int(dff["ano_termino"].min())
+            max_y = int(dff["ano_termino"].max())
+            year_range = st.slider("Período (ano de término)", min_y, max_y, (min_y, max_y))
+            dff = dff[(dff["ano_termino"] >= year_range[0]) & (dff["ano_termino"] <= year_range[1])]
+
+    st.dataframe(dff)
 
     # função utilitária
     def _csv_bytes(_df: pd.DataFrame) -> bytes:
@@ -334,17 +305,17 @@ ano_termino_options = sorted(df['ano_termino'].dropna().unique().tolist())
     colA, colB = st.columns(2)
     with colA:
         st.download_button(
-            "⬇️ Baixar dados filtrados (CSV)",
-            data=_csv_bytes(df),
-            file_name=f"cnrm_residentes_filtrado_{datetime.now().date()}.csv",
+            "⬇️ Baixar dicionário (CSV)",
+            data=_csv_bytes(dict_cols),
+            file_name=f"cnrm_dicionario_{datetime.now().date()}.csv",
             mime="text/csv",
             use_container_width=True,
         )
     with colB:
         st.download_button(
-            "⬇️ Baixar dicionário (CSV)",
-            data=_csv_bytes(dict_cols),
-            file_name=f"cnrm_dicionario_{datetime.now().date()}.csv",
+            "⬇️ Baixar dados filtrados (CSV)",
+            data=_csv_bytes(df),
+            file_name=f"cnrm_residentes_filtrado_{datetime.now().date()}.csv",
             mime="text/csv",
             use_container_width=True,
         )
