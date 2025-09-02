@@ -287,7 +287,7 @@ with tabs[2]:
     c1, c2 = st.columns([1, 1])
 
     with c1:
-        st.write("Veja o dicionário de dados baixáveis")
+        st.markdown("### 📘 Consulte o dicionário com a estrutura dos dados")
         st.download_button(
             "📄 Baixar dicionário (CSV)",
             data=dict_cols.to_csv(index=False).encode('utf-8'),
@@ -297,7 +297,7 @@ with tabs[2]:
         )
 
     # Filtros
-    st.write("Aplique os filtros se desejável")
+    st.markdown("### 🎯 Aplique filtros para personalizar os dados a serem baixados")
     c3, c4 = st.columns([1, 1])
 
     with c3:
@@ -362,7 +362,7 @@ with tabs[2]:
 
         where_clause = "WHERE " + " AND ".join(condicoes) if condicoes else ""
 
-        group_dims = ["regiao", "uf", "instituicao", "programa"]
+        group_dims = ["regiao", "uf", "instituicao", "programa","ano_inicio","ano_termino"]
         select_clause = ", ".join(group_dims)
 
         query = f"""
@@ -383,7 +383,7 @@ with tabs[2]:
         return df
     
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
-    
+
     if st.button("Consultar dados agregados"):
         with st.spinner("⏳ Consultando dados no BigQuery..."):
             df_resultado = consultar_agrupado_por_filtros(
