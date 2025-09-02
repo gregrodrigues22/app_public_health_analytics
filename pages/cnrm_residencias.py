@@ -415,7 +415,6 @@ if aba == "📥 Downloads":
                 instituicao=selected_instituicao,
                 regiao=selected_regiao,
                 uf=selected_uf,
-                validacao=selected_validacao,
                 ano_inicio_range=range_inicio,
                 ano_termino_range=range_termino,
             )
@@ -531,7 +530,6 @@ if aba == "📈 Analytics":
         instituicao=selected_instituicao,
         regiao=selected_regiao,
         uf=selected_uf,
-        validacao=selected_validacao,
         ano_inicio_range=range_inicio,
         ano_termino_range=range_termino
         )
