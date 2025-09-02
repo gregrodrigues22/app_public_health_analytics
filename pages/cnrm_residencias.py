@@ -140,52 +140,55 @@ with st.sidebar:
 # ---------------------------------------------------------------
 # Config da página 
 # ---------------------------------------------------------------
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def consultar_dados(amostra: bool = False):
-    # (opcional) selecione só as colunas que usa no app para acelerar
-    # cols = ["certificado","medico","crm","programa","instituicao","uf","inicio","termino","data_emissao"]
-    # query = f"SELECT {', '.join(cols)} FROM `{TABLE_ID}`"
-    query = f"SELECT * FROM `{TABLE_ID}`"
+def consultar_filtros_com_anos():
+    colunas = ["programa", "instituicao", "regiao", "uf", "validacao"]
+    filtros = {}
 
-    if amostra:
-        query += "\nLIMIT 20000"
+    # Consultar valores únicos para colunas categóricas
+    for col in colunas:
+        query = f"SELECT DISTINCT {col} FROM `{TABLE_ID}` WHERE {col} IS NOT NULL"
+        job = client.query(query, location=BQ_LOCATION)
+        df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
+        valores = sorted(df[col].dropna().unique().tolist())
+        filtros[col] = valores
 
-    job = client.query(query, location=BQ_LOCATION)
-    job.result(timeout=180)
+    # Consultar anos distintos de início e término
+    query_anos = f"""
+        SELECT DISTINCT
+          EXTRACT(YEAR FROM inicio) AS ano_inicio,
+          EXTRACT(YEAR FROM termino) AS ano_termino
+        FROM `{TABLE_ID}`
+        WHERE inicio IS NOT NULL OR termino IS NOT NULL
+    """
+    job = client.query(query_anos, location=BQ_LOCATION)
+    df_anos = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
 
-    df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
+    # Listas únicas de anos (removendo NaN e convertendo para int)
+    filtros["anos_inicio"] = sorted(df_anos["ano_inicio"].dropna().astype(int).unique().tolist())
+    filtros["anos_termino"] = sorted(df_anos["ano_termino"].dropna().astype(int).unique().tolist())
 
-    tz = pytz.timezone("America/Sao_Paulo")
-    return df, datetime.now(tz)
+    return filtros, datetime.now(pytz.timezone("America/Sao_Paulo"))
 
-# --- carregue uma vez e guarde no session_state (evita requery)
-if "df" not in st.session_state:
-    st.session_state["df"], st.session_state["ultima_atualizacao"] = consultar_dados(amostra=True)  # troque para False quando finalizar
+# --- Carrega uma vez e guarda no session_state
+if "filtros" not in st.session_state:
+    st.session_state["filtros"], st.session_state["ultima_atualizacao"] = consultar_filtros_com_anos()
 
-df = st.session_state["df"]
+filtros = st.session_state["filtros"]
 ultima_atualizacao = st.session_state["ultima_atualizacao"]
 
 # =====================================================================
-# Dados
+# Filtros
 # =====================================================================
-if "df" not in st.session_state:
-    st.warning("Dataset não detectado no estado da sessão. Carregue o df antes ou adapte este loader.")
-    # Exemplo de fallback (comente se não quiser):
-    # from google.cloud import bigquery
-    # client = bigquery.Client()
-    # df = client.query("SELECT * FROM `escolap2p.base_siscnrm.residentes_raw`").to_dataframe()
-    # st.session_state["df"] = df
 
-df = st.session_state.get("df", None)
-if df is None or df.empty:
-    st.stop()
-
-# --- Opções de Filtros
-programa_options    = ["(Todos)"]  + sorted(df["programa"].dropna().unique().tolist())
-instituicao_options = ["(Todas)"]  + sorted(df["instituicao"].dropna().unique().tolist())
-regiao_options      = ["(Todas)"]  + sorted(df["regiao"].dropna().unique().tolist())
-uf_options          = ["(Todas)"]  + sorted(df["uf"].dropna().unique().tolist())
-validacao_options   = ["(Todas)"]  + sorted(df["validacao"].dropna().unique().tolist())
+programa_options    = ["(Todos)"] + filtros.get("programa", [])
+instituicao_options = ["(Todas)"] + filtros.get("instituicao", [])
+regiao_options      = ["(Todas)"] + filtros.get("regiao", [])
+uf_options          = ["(Todas)"] + filtros.get("uf", [])
+validacao_options   = ["(Todas)"] + filtros.get("validacao", [])
+anos_inicio         = filtros.get("anos_inicio", [])
+anos_termino        = filtros.get("anos_termino", [])
 
 # =====================================================================
 # Layout – Abas
@@ -260,42 +263,95 @@ with tabs[2]:
     c1, c2 = st.columns([1, 1])
 
     with c1:
-
-        selected_programa = st.selectbox("Programas",options=programa_options,index=0)
-        if selected_programa != "(Todos)":
-            dff = dff[dff["programa"] == selected_programa]
-
-        selected_instituicao = st.selectbox("Instituição",options=instituicao_options,index=0)
-        if selected_instituicao != "(Todas)":
-            dff = dff[dff["instituicao"] == selected_instituicao]
-
-        selected_regiao = st.selectbox("Região",options=regiao_options,index=0)
-        if selected_regiao != "(Todas)":
-            dff = dff[dff["regiao"] == selected_regiao]
-
-        selected_uf = st.selectbox("UF",options=uf_options,index=0)
-        if selected_uf != "(Todas)":
-            dff = dff[dff["uf"] == selected_uf]
-
-        selected_validacao = st.selectbox("Validação",options=validacao_options,index=0)
-        if selected_validacao != "(Todas)":
-            dff = dff[dff["validacao"] == selected_validacao]
+        selected_programa = st.selectbox("Programas", options=programa_options, index=0)
+        selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0)
+        selected_regiao = st.selectbox("Região", options=regiao_options, index=0)
+        selected_uf = st.selectbox("UF", options=uf_options, index=0)
+        selected_validacao = st.selectbox("Validação", options=validacao_options, index=0)
 
     with c2:
 
-        if "ano_inicio" in dff.columns and dff["ano_inicio"].notna().any():
-            min_y = int(dff["ano_inicio"].min())
-            max_y = int(dff["ano_inicio"].max())
-            year_range = st.slider("Período (ano de início)", min_y, max_y, (min_y, max_y))
-            dff = dff[(dff["ano_inicio"] >= year_range[0]) & (dff["ano_inicio"] <= year_range[1])]
+        range_inicio = None
+        range_termino = None
 
-        if "ano_termino" in dff.columns and dff["ano_termino"].notna().any():
-            min_y = int(dff["ano_termino"].min())
-            max_y = int(dff["ano_termino"].max())
-            year_range = st.slider("Período (ano de término)", min_y, max_y, (min_y, max_y))
-            dff = dff[(dff["ano_termino"] >= year_range[0]) & (dff["ano_termino"] <= year_range[1])]
+        if anos_inicio:
+            min_y, max_y = min(anos_inicio), max(anos_inicio)
+            range_inicio = st.slider("Período (ano de início)", min_y, max_y, (min_y, max_y))
 
-    st.dataframe(dff)
+        if anos_termino:
+            min_y, max_y = min(anos_termino), max(anos_termino)
+            range_termino = st.slider("Período (ano de término)", min_y, max_y, (min_y, max_y))
+
+    @st.cache_data(ttl=1800, show_spinner=True)
+    def consultar_agrupado_por_filtros(
+        programa=None,
+        instituicao=None,
+        regiao=None,
+        uf=None,
+        validacao=None,
+        ano_inicio_range=None,
+        ano_termino_range=None
+    ):
+        condicoes = []
+        if programa and programa != "(Todos)":
+            condicoes.append(f"programa = '{programa}'")
+        if instituicao and instituicao != "(Todas)":
+            condicoes.append(f"instituicao = '{instituicao}'")
+        if regiao and regiao != "(Todas)":
+            condicoes.append(f"regiao = '{regiao}'")
+        if uf and uf != "(Todas)":
+            condicoes.append(f"uf = '{uf}'")
+        if validacao and validacao != "(Todas)":
+            condicoes.append(f"validacao = '{validacao}'")
+        if ano_inicio_range:
+            condicoes.append(f"EXTRACT(YEAR FROM inicio) BETWEEN {ano_inicio_range[0]} AND {ano_inicio_range[1]}")
+        if ano_termino_range:
+            condicoes.append(f"EXTRACT(YEAR FROM termino) BETWEEN {ano_termino_range[0]} AND {ano_termino_range[1]}")
+
+        where_clause = "WHERE " + " AND ".join(condicoes) if condicoes else ""
+
+        group_dims = ["programa", "instituicao", "regiao", "uf", "validacao"]
+        select_clause = ", ".join(group_dims)
+
+        query = f"""
+        SELECT
+        {select_clause},
+        COUNT(DISTINCT certificado) AS qtd_certificados,
+        COUNT(DISTINCT medico) AS qtd_medicos
+        FROM `{TABLE_ID}`
+        {where_clause}
+        GROUP BY {select_clause}
+        ORDER BY qtd_certificados DESC
+        """
+
+        job = client.query(query, location=BQ_LOCATION)
+        job.result(timeout=180)
+        df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
+
+        return df
+    
+    if st.button("Consultar dados agregados"):
+        df_resultado = consultar_agrupado_por_filtros(
+            programa=selected_programa,
+            instituicao=selected_instituicao,
+            regiao=selected_regiao,
+            uf=selected_uf,
+            validacao=selected_validacao,
+            ano_inicio_range=range_inicio,
+            ano_termino_range=range_termino,
+        )
+        st.dataframe(df_resultado)
+
+    def consultar_schema_tabela():
+        table = client.get_table(TABLE_ID)
+        schema_info = [{
+            "coluna": field.name,
+            "tipo": field.field_type,
+            "modo": field.mode
+        } for field in table.schema]
+        return pd.DataFrame(schema_info)
+    
+    dict_cols = consultar_schema_tabela()
 
     # função utilitária
     def _csv_bytes(_df: pd.DataFrame) -> bytes:
@@ -303,123 +359,31 @@ with tabs[2]:
 
     # Botões de download
     colA, colB = st.columns(2)
+
     with colA:
+        dict_cols = consultar_schema_tabela()
         st.download_button(
-            "⬇️ Baixar dicionário (CSV)",
+            "📥 Baixar dicionário (CSV)",
             data=_csv_bytes(dict_cols),
             file_name=f"cnrm_dicionario_{datetime.now().date()}.csv",
             mime="text/csv",
             use_container_width=True,
         )
+    
     with colB:
-        st.download_button(
-            "⬇️ Baixar dados filtrados (CSV)",
-            data=_csv_bytes(df),
-            file_name=f"cnrm_residentes_filtrado_{datetime.now().date()}.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
+        if 'df_resultado' in locals() and not df_resultado.empty:
+            st.download_button(
+                "📥 Baixar dados filtrados (CSV)",
+                data=_csv_bytes(df_resultado),
+                file_name=f"cnrm_residentes_filtrado_{datetime.now().date()}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        else:
+            st.warning("⚠️ Realize uma consulta antes de baixar os dados.")
 
 # ---------------------------------------------------------------------
 # 4) Analytics
 # ---------------------------------------------------------------------
 with tabs[3]:
     st.subheader("Visão analítica")
-
-    # ----------------------- Filtros (sidebar) -----------------------
-    with st.sidebar:
-        st.markdown("### 🔎 Filtros – CNRM")
-        uf_opts = ["(todas)"] + sorted([u for u in df["uf"].dropna().unique().tolist()]) if "uf" in df.columns else ["(todas)"]
-        uf_sel = st.selectbox("UF", uf_opts, index=0)
-
-        prog_opts = ["(todos)"] + sorted(df["programa"].dropna().unique().tolist()) if "programa" in df.columns else ["(todos)"]
-        prog_sel = st.selectbox("Programa", prog_opts, index=0)
-
-        inst_opts = ["(todas)"] + sorted(df["instituicao"].dropna().unique().tolist()) if "instituicao" in df.columns else ["(todas)"]
-        inst_sel = st.selectbox("Instituição", inst_opts, index=0)
-
-        # período por ano de término (se existir)
-        min_y = int(np.nanmin(df["ano_termino"])) if "ano_termino" in df.columns and df["ano_termino"].notna().any() else 1980
-        max_y = int(np.nanmax(df["ano_termino"])) if "ano_termino" in df.columns and df["ano_termino"].notna().any() else datetime.now().year
-        year_range = st.slider("Período (ano de término)", min_y, max_y, (min_y, max_y))
-
-    # aplica filtros
-    dff = df.copy()
-    if "uf" in df.columns and uf_sel != "(todas)":
-        dff = dff[dff["uf"] == uf_sel]
-    if "programa" in df.columns and prog_sel != "(todos)":
-        dff = dff[dff["programa"] == prog_sel]
-    if "instituicao" in df.columns and inst_sel != "(todas)":
-        dff = dff[dff["instituicao"] == inst_sel]
-    if "ano_termino" in df.columns:
-        dff = dff[(dff["ano_termino"] >= year_range[0]) & (dff["ano_termino"] <= year_range[1])]
-
-    # ----------------------- Indicadores (cards) ---------------------
-    total_reg = len(dff)
-    qtd_inst = dff["instituicao"].nunique() if "instituicao" in dff.columns else np.nan
-    qtd_prog = dff["programa"].nunique() if "programa" in dff.columns else np.nan
-    qtd_uf = dff["uf"].nunique() if "uf" in dff.columns else np.nan
-    periodo_txt = f"{int(np.nanmin(dff['ano_termino']))}–{int(np.nanmax(dff['ano_termino']))}" if "ano_termino" in dff.columns and not dff.empty else "—"
-
-    if {"inicio", "termino"}.issubset(dff.columns):
-        dur_meses = (dff["termino"] - dff["inicio"]).dt.days / 30.4375
-        media_dur = np.nanmean(dur_meses)
-    else:
-        media_dur = np.nan
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Registros", f"{total_reg:,}".replace(",", "."))
-    c2.metric("Instituições", f"{qtd_inst:,}".replace(",", "."))
-    c3.metric("Programas", f"{qtd_prog:,}".replace(",", "."))
-    c4.metric("UFs", f"{qtd_uf:,}".replace(",", "."))
-    c5.metric("Período (término)", periodo_txt)
-
-    if not np.isnan(media_dur):
-        st.caption(f"⏱️ Duração média (aprox.): **{media_dur:.1f}** meses")
-
-    st.markdown("---")
-
-    # ----------------------- Gráficos -------------------------------
-    # Série por ano de término
-    if "ano_termino" in dff.columns:
-        ts = dff.groupby("ano_termino").size().reset_index(name="qtd").sort_values("ano_termino")
-        fig_ts = go.Figure()
-        fig_ts.add_trace(go.Scatter(x=ts["ano_termino"], y=ts["qtd"], mode="lines+markers", name="Concluintes"))
-        fig_ts.update_layout(title="Série histórica – concluintes por ano de término",
-                             xaxis_title="Ano de término", yaxis_title="Quantidade", height=380)
-        st.plotly_chart(fig_ts, use_container_width=True)
-
-    colA, colB = st.columns(2)
-
-    # Top Programas
-    #if "programa" in dff.columns:
-    #    top_prog = (dff["programa"]
-    #                .value_counts()
-    #                .reset_index()
-    #                .rename(columns={"index": "programa", "programa": "qtd"})
-    #                .head(15))
-    #    fig_p = go.Figure(go.Bar(x=top_prog["qtd"], y=top_prog["programa"], orientation="h"))
-    #    fig_p.update_layout(title="Top 15 Programas (por registros)",
-    #                        xaxis_title="Quantidade", yaxis_title="", height=450)
-    #    colA.plotly_chart(fig_p, use_container_width=True)
-
-    # Top Instituições
-    #if "instituicao" in dff.columns:
-    #    top_inst = (dff["instituicao"]
-    #                .value_counts()
-    #                .reset_index()
-    #                .rename(columns={"index": "instituicao", "instituicao": "qtd"})
-    #                .head(15))
-    #    fig_i = go.Figure(go.Bar(x=top_inst["qtd"], y=top_inst["instituicao"], orientation="h"))
-    #    fig_i.update_layout(title="Top 15 Instituições (por registros)",
-    #                        xaxis_title="Quantidade", yaxis_title="", height=450)
-    #    colB.plotly_chart(fig_i, use_container_width=True)
-
-    # Distribuição por UF
-    #if "uf" in dff.columns:
-    #    dist_uf = dff["uf"].value_counts().reset_index().rename(columns={"index": "uf", "uf": "qtd"})
-    #    fig_uf = go.Figure(go.Bar(x=dist_uf["uf"], y=dist_uf["qtd"]))
-    #    fig_uf.update_layout(title="Distribuição por UF", xaxis_title="UF", yaxis_title="Quantidade", height=350)
-    #    st.plotly_chart(fig_uf, use_container_width=True)
-
-    st.caption("Obs.: indicadores e gráficos respeitam os filtros selecionados.")
