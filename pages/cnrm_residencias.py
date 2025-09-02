@@ -10,9 +10,9 @@ import os
 from datetime import datetime
 import pytz
 from pathlib import Path
-
 from google.cloud import bigquery
 from google.cloud import bigquery_storage
+from src.graph import pareto_plotly  
 
 # ---------------------------------------------------------------
 # BigQuery (região e tabela)
@@ -575,16 +575,24 @@ if aba == "📈 Analytics":
 
     st.markdown("---")
 
+    with st.expander("🏥 Quais instituições mais certificaram residentes?"):
+        pareto_plotly(
+            df_raw=df,
+            col_categoria="instituicao",         # ou "programa", "uf", etc.
+            col_valor="qtd_certificados",        # <<< importante!
+            titulo="Instituições que mais certificaram residentes — Pareto"
+            )
+
+    with st.expander("🎓 Quais programas mais certificaram residentes?"):
+        top_inst = df.groupby("instituicao")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
+        st.dataframe(top_inst.reset_index(), use_container_width=True)
+
     with st.expander("📊 Qual a distribuição de certificados por ano?"):
         st.bar_chart(df.groupby("ano_termino")["qtd_certificados"].sum())
 
     with st.expander("🗺️ Como os certificados se distribuem por UF?"):
         grafico_uf = df.groupby("uf")["qtd_certificados"].sum().sort_values(ascending=False)
         st.bar_chart(grafico_uf)
-
-    with st.expander("🏥 Quais instituições mais certificaram residentes?"):
-        top_inst = df.groupby("instituicao")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
-        st.dataframe(top_inst.reset_index(), use_container_width=True)
 
     with st.expander("🎓 Quais os programas mais comuns?"):
         top_prog = df.groupby("programa")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
