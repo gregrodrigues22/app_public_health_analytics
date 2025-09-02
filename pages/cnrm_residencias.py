@@ -192,8 +192,6 @@ anos_termino        = filtros.get("anos_termino", [])
 # Layout – Abas
 # =====================================================================
 
-active_tab = tabs(["📺 Intruções de uso", "🧱 Metodologia", "📥 Downloads", "📈 Analytics"])
-
 def custom_tabs(tabs_list, default=0, cor="rgb(0,161,178)"):
     import streamlit as st
     active_tab = st.radio("", tabs_list, index=default)
@@ -231,15 +229,6 @@ def custom_tabs(tabs_list, default=0, cor="rgb(0,161,178)"):
     return active_tab
 
 aba = custom_tabs(["📺 Intruções de uso", "🧱 Metodologia", "📥 Downloads", "📈 Analytics"], cor="rgb(0,161,178)")
-
-# --- Controle de abas com radio ---
-aba = st.radio(
-    "Escolha uma aba",
-    ["📺 Intruções de uso", "🧱 Metodologia", "📥 Downloads", "📈 Analytics"],
-    horizontal=True,
-    label_visibility="collapsed",  # Esconde o título "Escolha uma aba"
-    key="radio_abas"
-)
 
 # ---------------------------------------------------------------------
 # Instruções
