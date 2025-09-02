@@ -192,27 +192,51 @@ anos_termino        = filtros.get("anos_termino", [])
 # Layout – Abas
 # =====================================================================
     
-abas = ["📺 Instruções de uso", "🧱 Metodologia", "⬇️ Download", "📈 Analytics"]
+# --- Estilo CSS customizado ---
+st.markdown("""
+<style>
+.radio-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
 
-# Define aba inicial se não existir
-if "aba_ativa" not in st.session_state or st.session_state["aba_ativa"] not in abas:
-    st.session_state["aba_ativa"] = abas[0]  # default: primeira aba
+.radio-tab-button {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid #CCC;
+    cursor: pointer;
+    background-color: #f9f9f9;
+    font-weight: bold;
+    transition: 0.2s;
+}
 
-# Garante que a aba ativa existe na lista de abas
-try:
-    aba_idx = abas.index(st.session_state["aba_ativa"])
-except ValueError:
-    st.session_state["aba_ativa"] = abas[0]
-    aba_idx = 0
+.radio-tab-button:hover {
+    background-color: #eaeaea;
+}
 
-# Cria tabs
-tabs = st.tabs(abas)
+.radio-tab-selected {
+    background-color: #00a1b2;
+    color: white;
+    border: 1px solid #00818f;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- Controle de abas com radio ---
+aba = st.radio(
+    "Escolha uma aba",
+    ["📺 Intruções de uso", "🧱 Metodologia", "📥 Downloads", "📈 Analytics"],
+    horizontal=True,
+    label_visibility="collapsed",  # Esconde o título "Escolha uma aba"
+    key="radio_abas"
+)
 
 # ---------------------------------------------------------------------
 # Instruções
 # ---------------------------------------------------------------------
 
-with tabs[0]:
+if aba == "📺 Intruções de uso":
     st.subheader("📺 Intruções de uso")
     st.markdown("""
 - Na aba **Metodologia** você pode encontrar detalhes de como os dados foram tratados, plotados e analisados.
@@ -228,8 +252,7 @@ with tabs[0]:
 # Metodologia
 # ---------------------------------------------------------------------
 
-with tabs[1]:
-
+if aba == "🧱 Metodologia":
     st.subheader("🧱 Metodologia")
 
     c1, c2 = st.columns([1.2, 1])
@@ -271,7 +294,7 @@ Registros de **certificados de residência médica** (CNRM).
 # Download
 # ---------------------------------------------------------------------
 
-with tabs[2]:
+if aba == "📥 Downloads":
     st.session_state["aba_ativa"] = abas[2]
     st.subheader("📥 Baixar dados tratados")
 
@@ -392,9 +415,6 @@ with tabs[2]:
     
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
-    def manter_aba_download():
-        st.session_state["aba_ativa"] = abas[2]
-
     if st.button("Consultar dados agregados", on_click=manter_aba_download):
         with st.spinner("⏳ Consultando dados no BigQuery..."):
             df_resultado = consultar_agrupado_por_filtros(
@@ -425,8 +445,7 @@ with tabs[2]:
 # ---------------------------------------------------------------------
 # 4) Analytics
 # ---------------------------------------------------------------------
-with tabs[3]:
-    st.session_state["aba_ativa"] = abas[3]
+if aba == "📈 Analytics":
     st.subheader("📈 Analytics")
 
     st.markdown("**Aplique filtros para personalizar os dados a serem baixados**")
