@@ -330,7 +330,6 @@ if aba == "📥 Downloads":
         selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0, key="selected_instituicao_download")
         selected_regiao = st.selectbox("Região", options=regiao_options, index=0, key="selected_regiao_download")
         selected_uf = st.selectbox("UF", options=uf_options, index=0, key="selected_uf_download")
-        selected_validacao = st.selectbox("Validação", options=validacao_options, index=0, key="selected_validacao_")
 
     with c4:
         range_inicio = None
@@ -377,8 +376,6 @@ if aba == "📥 Downloads":
             condicoes.append(f"regiao = '{regiao}'")
         if uf and uf != "(Todas)":
             condicoes.append(f"uf = '{uf}'")
-        if validacao and validacao != "(Todas)":
-            condicoes.append(f"validacao = '{validacao}'")
         if ano_inicio_range:
             condicoes.append(f"ano_inicio BETWEEN {ano_inicio_range[0]} AND {ano_inicio_range[1]}")
 
@@ -452,7 +449,6 @@ if aba == "📈 Analytics":
         selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0, key="selectbox_instituicao_analytics")
         selected_regiao = st.selectbox("Região", options=regiao_options, index=0, key="selectbox_regiao_analytics")
         selected_uf = st.selectbox("UF", options=uf_options, index=0, key="selectbox_uf_analytics")
-        selected_validacao = st.selectbox("Validação", options=validacao_options, index=0, key="selectbox_validacao_analytics")
 
     with c4:
         range_inicio = None
@@ -501,8 +497,6 @@ if aba == "📈 Analytics":
             condicoes.append(f"regiao = '{regiao}'")
         if uf and uf != "(Todas)":
             condicoes.append(f"uf = '{uf}'")
-        if validacao and validacao != "(Todas)":
-            condicoes.append(f"validacao = '{validacao}'")
         if ano_inicio_range:
             condicoes.append(f"ano_inicio BETWEEN {ano_inicio_range[0]} AND {ano_inicio_range[1]}")
 
@@ -576,12 +570,8 @@ if aba == "📈 Analytics":
     st.markdown("---")
 
     with st.expander("🏥 Quais instituições mais certificaram residentes?"):
-        pareto_plotly(
-            df,
-            col_categoria="instituicao",
-            col_valor="qtd_certificados",  # <<< esta coluna já agregada
-            titulo="Instituições que mais certificaram residentes"
-        )
+        fig = pareto_plotly(df, col_id="instituicao", col_value="qtd_certificados")
+        st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("🎓 Quais programas mais certificaram residentes?"):
         top_inst = df.groupby("instituicao")["qtd_certificados"].sum().sort_values(ascending=False).head(10)

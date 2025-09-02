@@ -266,4 +266,4 @@ def pareto_plotly(
     # 2) Evitar corte de rótulos/linha no limite do eixo
     fig.update_traces(selector=dict(type="scatter"), cliponaxis=False)
 
-    fig.show()
+    return fig
