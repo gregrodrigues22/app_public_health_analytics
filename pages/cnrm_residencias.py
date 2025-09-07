@@ -257,23 +257,46 @@ if aba == "🧱 Metodologia":
     with c1:
         st.markdown("""
 **Escopo**  
-Registros de **certificados de residência médica** (CNRM).
+- Registros de **certificados de residência médica** (CNRM).
 
 **Aquisição & Atualização** 
-- Fonte primária: *Comissão Nacional de Residência Médica (CNRM)*. 
+- Fonte primária: *Comissão Nacional de Residência Médica (CNRM)*.
 - Periodicidade: quando houver atualização pública.  
-- Pipeline: extração → padronização de colunas → tipos/normalização de datas → chaves canônicas (UF, programa, instituição).
+- Pipeline: extração → padronização de colunas → normalização de datas → enriquecimento (vide abaixo).
 
-**Tratamento principal**  
-- `inicio`, `termino` e `data_emissao` convertidas para `datetime`.  
+**Transformações**  
+- Aquisição de dados por UF e empilhamento de todos os dados.
+- Renomeação de nome das colunas.
+- Enriquecimento inferindo sexo biológico através do nome do médico.
+- Data de início da residência, data de término da residência e data de emissão do certificado padronizadas como data.
 - Campos textuais (`programa`, `instituicao`, `uf`) padronizados.  
+- Padronização do nome do médico, com criação de identificador único hash para Nome do Médico.
+- Padronização do CRM do médico certificado, com criação de identificador único hash para CRM.
+- Padronização do Certificado do médico certificado, com criação de identificador único para Certificado.
 - Geração de colunas derivadas: `ano_inicio`, `ano_termino`.  
-- Geração de campo de região para identificar região do país segundo `uf`.
-- Geração de campo de validação através de verificação de campos válidos: se linha não contiver data de ínicio OU data de término OU programa OU instituição OU nome do médico é definido como não validado. Linhas não validadas são descartadas para análise.
+- Enriquecimento com a geração de campo de região para identificar região do país segundo `uf`.
+- Padronização de nome de especialidades de acordo com [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
+- Padronização de duração da formação segundo especialidades de acordo com [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
+- Padronização de pré-requisitos da formação segundo especialidades de acordo com [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
+- Padronização de nome da área de atuação de acordo com [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
+- Padronização de duração da formação segundo área de atuação de acordo com [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
+- Padronização de pré-requisitos da formação segundo área de atuação de acordo com [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
+- Criação de coluna derivada de tipo de formação como especialidade ou área de atuação.
+- Criação de coluna 
+- Geração de campo de validação através de verificação de campos válidos: 
+  - se linha não contiver data de ínicio OU data de término é considerada inválida.
+  - se linha não contiver programa OU instituição OU nome do médico é considerada inválida. 
+  - se linha não contiver programa OU instituição OU nome do médico é considerada inválida. 
+  - se linha contiver nome de especialidade ou nome de área de atuação não definida pela resolução do CFM é considerada inválida.
+  - se linha contiver data de término com diferença de data de início maior que 2 vezes o tempo padrão de duração da formação é considerada inválida.
+  - verificação se determinado certificado emitido tem de fato critérios de pré-requesitos. Caso não linha é considerada inválida.
+  - ao final, número de linhas inválidas ficam abaixo contabilizadas. 
+  - linhas não validadas são descartadas para análise.
 
 **Limitações conhecidas**  
 - Registros com dados inválidos.  
-- Homônimos e mudanças de nomenclatura institucional/programática podem exigir reconciliação (matching) adicional.
+- Homônimos de nomes de médicos. 
+- Mudanças de nomenclatura institucional e de programa.
         """)
 
     a, b = st.columns(2)
@@ -293,6 +316,7 @@ Registros de **certificados de residência médica** (CNRM).
 # ---------------------------------------------------------------------
 
 if aba == "📥 Downloads":
+
     st.subheader("📥 Baixar dados tratados")
 
     def consultar_schema_tabela():
