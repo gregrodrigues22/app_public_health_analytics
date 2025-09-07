@@ -265,7 +265,7 @@ if aba == "🧱 Metodologia":
 - Pipeline: extração → padronização de colunas → normalização de datas → enriquecimento (vide abaixo).
 
 **Transformações**  
-- Aquisição de dados por UF e empilhamento de todos os dados.
+- Aquisição de dados por UF e empilhamento de todos os dados através do site [Portal CNRM](http://siscnrm.mec.gov.br/certificados).
 - Renomeação de nome das colunas.
 - Enriquecimento inferindo sexo biológico através do nome do médico.
 - Data de início da residência, data de término da residência e data de emissão do certificado padronizadas como data.
@@ -282,10 +282,8 @@ if aba == "🧱 Metodologia":
 - Padronização de duração da formação segundo área de atuação de acordo com [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
 - Padronização de pré-requisitos da formação segundo área de atuação de acordo com [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
 - Criação de coluna derivada de tipo de formação como especialidade ou área de atuação.
-- Criação de coluna 
 - Geração de campo de validação através de verificação de campos válidos: 
   - se linha não contiver data de ínicio OU data de término é considerada inválida.
-  - se linha não contiver programa OU instituição OU nome do médico é considerada inválida. 
   - se linha não contiver programa OU instituição OU nome do médico é considerada inválida. 
   - se linha contiver nome de especialidade ou nome de área de atuação não definida pela resolução do CFM é considerada inválida.
   - se linha contiver data de término com diferença de data de início maior que 2 vezes o tempo padrão de duração da formação é considerada inválida.
@@ -307,8 +305,9 @@ if aba == "🧱 Metodologia":
         st.markdown("#### Links úteis")
         st.markdown("""
 - 📚 **Fonte oficial**: [Portal CNRM](http://siscnrm.mec.gov.br/certificados)
-- 🗃️ **Tabela no BigQuery**: `escolap2p.base_siscnrm.residentes_applications`
+- 📚 **Referência oficial**: [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
 - 🧪 **Reprodutibilidade**: código do ETL (em breve no GitHub) 
+- 🗃️ **Tabela no BigQuery**: `escolap2p.base_siscnrm.residentes_applications`
         """)
 
 # ---------------------------------------------------------------------
