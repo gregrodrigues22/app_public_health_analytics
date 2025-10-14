@@ -12,7 +12,11 @@ import pytz
 from pathlib import Path
 from google.cloud import bigquery
 from google.cloud import bigquery_storage
+from google.cloud.bigquery import ScalarQueryParameter as Q
 from src.graph import pareto_plotly  
+from src.graph import bar_yoy_trend
+from src.graph import pie_standard
+import plotly.express as px
 
 # ---------------------------------------------------------------
 # BigQuery (região e tabela)
@@ -143,7 +147,7 @@ with st.sidebar:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def consultar_filtros_com_anos():
-    colunas = ["programa", "instituicao", "regiao", "uf", "validacao"]
+    colunas = ["programa_padronizado", "instituicao_padronizada", "regiao", "uf", "validacao_final"]
     filtros = {}
 
     # Consultar valores únicos para colunas categóricas
@@ -156,16 +160,16 @@ def consultar_filtros_com_anos():
     # Consulta para os anos já existentes
     query_anos = f"""
         SELECT DISTINCT
-            ano_inicio,
-            ano_termino
+            formacao_inicio_ano,
+            formacao_termino_ano
         FROM `{TABLE_ID}`
-        WHERE ano_inicio IS NOT NULL OR ano_termino IS NOT NULL
+        WHERE formacao_inicio_ano IS NOT NULL OR formacao_termino_ano IS NOT NULL
     """
     job = client.query(query_anos, location=BQ_LOCATION)
     df_anos = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
 
-    filtros["anos_inicio"] = sorted(df_anos["ano_inicio"].dropna().astype(int).unique().tolist())
-    filtros["anos_termino"] = sorted(df_anos["ano_termino"].dropna().astype(int).unique().tolist())
+    filtros["formacao_inicio_ano"] = sorted(df_anos["formacao_inicio_ano"].dropna().astype(int).unique().tolist())
+    filtros["formacao_termino_ano"] = sorted(df_anos["formacao_termino_ano"].dropna().astype(int).unique().tolist())
 
     return filtros, datetime.now(pytz.timezone("America/Sao_Paulo"))
 
@@ -180,13 +184,13 @@ ultima_atualizacao = st.session_state["ultima_atualizacao"]
 # Filtros
 # =====================================================================
 
-programa_options    = ["(Todos)"] + filtros.get("programa", [])
-instituicao_options = ["(Todas)"] + filtros.get("instituicao", [])
+programa_options    = ["(Todos)"] + filtros.get("programa_padronizado", [])
+instituicao_options = ["(Todas)"] + filtros.get("instituicao_padronizada", [])
 regiao_options      = ["(Todas)"] + filtros.get("regiao", [])
 uf_options          = ["(Todas)"] + filtros.get("uf", [])
-validacao_options   = ["(Todas)"] + filtros.get("validacao", [])
-anos_inicio         = filtros.get("anos_inicio", [])
-anos_termino        = filtros.get("anos_termino", [])
+validacao_options   = ["(Todas)"] + filtros.get("validacao_final", [])
+anos_inicio         = filtros.get("formacao_inicio_ano", [])
+anos_termino        = filtros.get("formacao_termino_ano", [])
 
 # =====================================================================
 # Layout – Abas
@@ -250,6 +254,34 @@ if aba == "📺 Intruções de uso":
 # Metodologia
 # ---------------------------------------------------------------------
 
+client = bigquery.Client(project=st.secrets["bigquery"]["project_id"], location="southamerica-east1")
+TABLE_ID = "escolap2p.base_siscnrm.residentes_applications"
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def baseline_counts(table_id: str):
+    # Consolida por certificado_hash: se qualquer linha for 'Sim', o hash é válido
+    sql = f"""
+    WITH por_hash AS (
+      SELECT
+        certificado_hash,
+        MAX(CASE WHEN LOWER(TRIM(validacao_final)) = 'sim' THEN 1 ELSE 0 END) AS is_valid
+      FROM `{table_id}`
+      GROUP BY certificado_hash
+    )
+    SELECT
+      SUM(CASE WHEN is_valid = 1 THEN 1 ELSE 0 END) AS certificados_validos,
+      SUM(CASE WHEN is_valid = 0 THEN 1 ELSE 0 END) AS certificados_invalidos
+    FROM por_hash
+    """
+    df = client.query(sql).result().to_dataframe()
+    return {
+        "cert_validos":   int(df.loc[0, "certificados_validos"] or 0),
+        "cert_invalidos": int(df.loc[0, "certificados_invalidos"] or 0),
+    }
+
+BASE = baseline_counts(TABLE_ID)  # ← calculado uma vez e “congelado”
+fmt = lambda x: f"{x:,}".replace(",", ".")
+
 if aba == "🧱 Metodologia":
     st.subheader("🧱 Metodologia")
 
@@ -298,17 +330,19 @@ if aba == "🧱 Metodologia":
         """)
 
     a, b = st.columns(2)
-    a.metric("Certificados válidos", "356.105", border=True)
-    b.metric("Certificados inválidos", "4.836", border=True)
+    a.metric("Certificados válidos (distinct, base)",   fmt(BASE["cert_validos"]),   border=True)
+    b.metric("Certificados inválidos (distinct, base)", fmt(BASE["cert_invalidos"]), border=True)
 
     with c2:
         st.markdown("#### Links úteis")
         st.markdown("""
 - 📚 **Fonte oficial**: [Portal CNRM](http://siscnrm.mec.gov.br/certificados)
 - 📚 **Referência oficial**: [Resolução CFM](https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2024/2380_2024.pdf?)
-- 🧪 **Reprodutibilidade**: código do ETL (em breve no GitHub) 
+- 🧪 **Reprodutibilidade**: código do ETL (em breve no GitHub).
 - 🗃️ **Tabela no BigQuery**: `escolap2p.base_siscnrm.residentes_applications`
         """)
+
+    st.warning("⚠️ Quer ter acesso completo a toda metodologia e conjunto de dados do estado bruto ao tratado? Entre em contato conosco: contato@patients2python.com.br ou pelo whatsapp +55 31 9927-5197")
 
 # ---------------------------------------------------------------------
 # Download
@@ -316,7 +350,7 @@ if aba == "🧱 Metodologia":
 
 if aba == "📥 Downloads":
 
-    st.subheader("📥 Baixar dados tratados")
+    st.subheader("📥 Downloads")
 
     def consultar_schema_tabela():
         table = client.get_table(TABLE_ID)
@@ -382,38 +416,40 @@ if aba == "📥 Downloads":
 
     @st.cache_data(ttl=1800, show_spinner=True)
     def consultar_agrupado_por_filtros(
-        programa=None,
-        instituicao=None,
+        programa_padronizado=None,
+        instituicao_padronizada=None,
         regiao=None,
         uf=None,
-        validacao=None,
-        ano_inicio_range=None,
-        ano_termino_range=None
+        validacao_final=None,
+        formacao_inicio_ano=None,
+        formacao_termino_ano=None
     ):
         condicoes = []
-        if programa and programa != "(Todos)":
-            condicoes.append(f"programa = '{programa}'")
-        if instituicao and instituicao != "(Todas)":
-            condicoes.append(f"instituicao = '{instituicao}'")
+        
+        condicoes.append("LOWER(TRIM(validacao_final)) = 'sim'")
+
+        if programa_padronizado and programa_padronizado != "(Todos)":
+            condicoes.append(f"programa_padronizado = '{programa_padronizado}'")
+        if instituicao_padronizada and instituicao_padronizada != "(Todas)":
+            condicoes.append(f"instituicao_padronizada = '{instituicao_padronizada}'")
         if regiao and regiao != "(Todas)":
             condicoes.append(f"regiao = '{regiao}'")
         if uf and uf != "(Todas)":
             condicoes.append(f"uf = '{uf}'")
-        if ano_inicio_range:
-            condicoes.append(f"ano_inicio BETWEEN {ano_inicio_range[0]} AND {ano_inicio_range[1]}")
-
-        if ano_termino_range:
-            condicoes.append(f"ano_termino BETWEEN {ano_termino_range[0]} AND {ano_termino_range[1]}")
+        if formacao_inicio_ano:
+            condicoes.append(f"formacao_inicio_ano BETWEEN {formacao_inicio_ano[0]} AND {formacao_inicio_ano[1]}")
+        if formacao_termino_ano:
+            condicoes.append(f"formacao_termino_ano BETWEEN {formacao_termino_ano[0]} AND {formacao_termino_ano[1]}")
 
         where_clause = "WHERE " + " AND ".join(condicoes) if condicoes else ""
 
-        group_dims = ["regiao", "uf", "instituicao", "programa","ano_inicio","ano_termino"]
+        group_dims = ["regiao", "uf", "instituicao_padronizada", "programa_padronizado","formacao_inicio_ano","formacao_termino_ano"]
         select_clause = ", ".join(group_dims)
 
         query = f"""
         SELECT
         {select_clause},
-        COUNT(DISTINCT certificado) AS qtd_certificados
+        COUNT(DISTINCT certificado_hash) AS qtd_certificados
         FROM `{TABLE_ID}`
         {where_clause}
         GROUP BY {select_clause}
@@ -424,7 +460,15 @@ if aba == "📥 Downloads":
         job.result(timeout=180)
         df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
 
-        return df
+        # --- NOVO: total sem supercontagem (mesmo WHERE, sem GROUP BY) ---
+        query_total = f"""
+        SELECT COUNT(DISTINCT certificado_hash) AS total_validos
+        FROM `{TABLE_ID}`
+        {where_clause}
+        """
+        total = client.query(query_total, location=BQ_LOCATION).result().to_dataframe().iloc[0]["total_validos"]
+
+        return df, int(total)
     
     st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
 
@@ -433,16 +477,16 @@ if aba == "📥 Downloads":
 
     if st.button("Consultar dados agregados"):
         with st.spinner("⏳ Consultando dados no BigQuery..."):
-            df_resultado = consultar_agrupado_por_filtros(
-                programa=selected_programa,
-                instituicao=selected_instituicao,
+            df_resultado, total = consultar_agrupado_por_filtros(
+                programa_padronizado=selected_programa,
+                instituicao_padronizada=selected_instituicao,
                 regiao=selected_regiao,
                 uf=selected_uf,
-                ano_inicio_range=range_inicio,
-                ano_termino_range=range_termino,
+                formacao_inicio_ano=range_inicio,
+                formacao_termino_ano=range_termino,
             )
         st.success("✅ Consulta finalizada com sucesso!")
-        valor_formatado = f"{df_resultado['qtd_certificados'].sum():,}".replace(",", ".")
+        valor_formatado = f"{total:,}".replace(",", ".")
         st.metric("Certificados válidos", valor_formatado, border=True)
         st.dataframe(df_resultado)
 
@@ -460,158 +504,472 @@ if aba == "📥 Downloads":
 # ---------------------------------------------------------------------
 # 4) Analytics
 # ---------------------------------------------------------------------
+
 if aba == "📈 Analytics":
+    import numpy as np
+    import pandas as pd
+    import plotly.express as px
+    from google.cloud import bigquery
+
     st.subheader("📈 Analytics")
 
-    st.markdown("**Aplique filtros para personalizar os dados a serem baixados**")
-    c3, c4 = st.columns([1, 1])
+    # --- BigQuery / Tabela e colunas ---
+    client = bigquery.Client(
+        project=st.secrets["bigquery"]["project_id"],
+        location="southamerica-east1",
+    )
+    TABLE_ID = "escolap2p.base_siscnrm.residentes_applications"
 
-    with c3:
-        selected_programa = st.selectbox("Programas", options=programa_options, index=0, key="selectbox_programa_analytics")
-        selected_instituicao = st.selectbox("Instituição", options=instituicao_options, index=0, key="selectbox_instituicao_analytics")
-        selected_regiao = st.selectbox("Região", options=regiao_options, index=0, key="selectbox_regiao_analytics")
-        selected_uf = st.selectbox("UF", options=uf_options, index=0, key="selectbox_uf_analytics")
+    # Mapeie os nomes das colunas usadas na sua tabela
+    COL_PROG     = "programa_padronizado"
+    COL_INST     = "instituicao_padronizada"
+    COL_REGIAO   = "regiao"
+    COL_UF       = "uf"
+    COL_ANO_INI  = "formacao_inicio_ano"
+    COL_ANO_FIM  = "formacao_termino_ano"
 
-    with c4:
-        range_inicio = None
-        range_termino = None
+    # NOVOS FILTROS
+    COL_SEXO         = "medico_sexo_inferido"                       # 'masculino'/'feminino'/...
+    COL_TIPO_FORM    = "formacao_padronizada_tipo"                  # ex.: 'Programa de Residência'
+    COL_ESPEC_BASICA = "formacao_padronizada_especialidade_basica"  # 'Sim'/'Não'
+    COL_ENTRADA_DIR  = "formacao_padronizada_entrada_direta"        # 'Sim'/'Não'
+    COL_ETAPA        = "formacao_etapa_residencia"                  # 'R1','R2','R3',...
+    COL_DURACAO      = "formacao_duracao_anos"                      # numérico
+    COL_ANO_EMISSAO  = "certificado_emissao_ano"                    # ano
 
-        if anos_inicio:
-            anos_inicio_limpos = sorted(set(int(ano) for ano in anos_inicio if pd.notnull(ano) and str(ano).isdigit()))
-            if anos_inicio_limpos:
-                min_inicio, max_inicio = min(anos_inicio_limpos), max(anos_inicio_limpos)
-                range_inicio = st.slider(
-                    "Período (ano de início)", 
-                    min_inicio, 
-                    max_inicio, 
-                    (min_inicio, max_inicio),
-                    key="slider_inicio_analytics"
-                )
-
-        if anos_termino:
-            anos_termino_limpos = sorted(set(int(ano) for ano in anos_termino if pd.notnull(ano) and str(ano).isdigit()))
-            if anos_termino_limpos:
-                min_termino, max_termino = min(anos_termino_limpos), max(anos_termino_limpos)
-                range_termino = st.slider(
-                    "Período (ano de término)", 
-                    min_termino, 
-                    max_termino, 
-                    (min_termino, max_termino),
-                    key="slider_termino_analytics"
-                )
+    def _to_list(x):
+        """Converte ndarray/None para lista sem ambiguidade booleana."""
+        return [] if x is None else list(x)
 
     @st.cache_data(ttl=1800, show_spinner=True)
-    def consultar_agrupado_por_filtros(
-        programa=None,
-        instituicao=None,
-        regiao=None,
-        uf=None,
-        validacao=None,
-        ano_inicio_range=None,
-        ano_termino_range=None
-    ):
-        condicoes = []
-        if programa and programa != "(Todos)":
-            condicoes.append(f"programa = '{programa}'")
-        if instituicao and instituicao != "(Todas)":
-            condicoes.append(f"instituicao = '{instituicao}'")
-        if regiao and regiao != "(Todas)":
-            condicoes.append(f"regiao = '{regiao}'")
-        if uf and uf != "(Todas)":
-            condicoes.append(f"uf = '{uf}'")
-        if ano_inicio_range:
-            condicoes.append(f"ano_inicio BETWEEN {ano_inicio_range[0]} AND {ano_inicio_range[1]}")
-
-        if ano_termino_range:
-            condicoes.append(f"ano_termino BETWEEN {ano_termino_range[0]} AND {ano_termino_range[1]}")
-
-        where_clause = "WHERE " + " AND ".join(condicoes) if condicoes else ""
-
-        group_dims = ["regiao", "uf", "instituicao", "programa","ano_inicio","ano_termino"]
-        select_clause = ", ".join(group_dims)
-
-        query = f"""
-        SELECT
-        {select_clause},
-        COUNT(DISTINCT certificado) AS qtd_certificados
-        FROM `{TABLE_ID}`
-        {where_clause}
-        GROUP BY {select_clause}
-        ORDER BY qtd_certificados DESC
+    def carregar_opcoes_filtros():
         """
+        Busca no BigQuery as listas de opções e limites de anos (apenas válidos).
+        Retorna um dict com listas ordenadas + min/max.
+        """
+        sql = f"""
+        WITH base AS (
+          SELECT
+            LOWER(TRIM(validacao_final)) AS vf,
 
-        job = client.query(query, location=BQ_LOCATION)
-        job.result(timeout=180)
-        df = job.to_dataframe(create_bqstorage_client=True, bqstorage_client=bqs)
+            {COL_PROG}   AS prog,
+            {COL_INST}   AS inst,
+            {COL_REGIAO} AS regiao,
+            UPPER({COL_UF}) AS uf,
 
-        return df
+            CAST({COL_ANO_INI} AS INT64) AS ano_ini,
+            CAST({COL_ANO_FIM} AS INT64) AS ano_fim,
+
+            {COL_SEXO}          AS sexo,
+            {COL_TIPO_FORM}     AS tipo_form,
+            {COL_ESPEC_BASICA}  AS espec_basica,
+            {COL_ENTRADA_DIR}   AS entrada_dir,
+            {COL_ETAPA}         AS etapa,
+            CAST({COL_DURACAO} AS INT64) AS duracao,
+            CAST({COL_ANO_EMISSAO} AS INT64) AS ano_emissao
+          FROM `{TABLE_ID}`
+        )
+        SELECT
+          -- opções "clássicas"
+          ARRAY_AGG(DISTINCT prog   IGNORE NULLS ORDER BY prog)   AS programas,
+          ARRAY_AGG(DISTINCT inst   IGNORE NULLS ORDER BY inst)   AS instituicoes,
+          ARRAY_AGG(DISTINCT regiao IGNORE NULLS ORDER BY regiao) AS regioes,
+          ARRAY_AGG(DISTINCT uf     IGNORE NULLS ORDER BY uf)     AS ufs,
+
+          -- limites dos anos de formação
+          MIN(ano_ini) AS min_ini, MAX(ano_ini) AS max_ini,
+          MIN(ano_fim) AS min_fim, MAX(ano_fim) AS max_fim,
+
+          -- NOVOS: opções adicionais
+          ARRAY_AGG(DISTINCT sexo         IGNORE NULLS ORDER BY sexo)        AS sexos,
+          ARRAY_AGG(DISTINCT tipo_form    IGNORE NULLS ORDER BY tipo_form)   AS tipos_form,
+          ARRAY_AGG(DISTINCT espec_basica IGNORE NULLS ORDER BY espec_basica) AS op_espec_basica,
+          ARRAY_AGG(DISTINCT entrada_dir  IGNORE NULLS ORDER BY entrada_dir)  AS op_entrada_dir,
+          ARRAY_AGG(DISTINCT etapa        IGNORE NULLS ORDER BY etapa)        AS etapas,
+
+          -- limites para sliders adicionais
+          MIN(duracao)     AS min_dur,     MAX(duracao)     AS max_dur,
+          MIN(ano_emissao) AS min_emissao, MAX(ano_emissao) AS max_emissao
+
+        FROM base
+        WHERE vf = 'sim'
+        """
+        df = client.query(sql).result().to_dataframe()
+        r = df.iloc[0]
+        return dict(
+            programas       = _to_list(r["programas"]),
+            instituicoes    = _to_list(r["instituicoes"]),
+            regioes         = _to_list(r["regioes"]),
+            ufs             = _to_list(r["ufs"]),
+            min_ini         = int(r["min_ini"]) if pd.notna(r["min_ini"]) else 1980,
+            max_ini         = int(r["max_ini"]) if pd.notna(r["max_ini"]) else 2026,
+            min_fim         = int(r["min_fim"]) if pd.notna(r["min_fim"]) else 1980,
+            max_fim         = int(r["max_fim"]) if pd.notna(r["max_fim"]) else 2026,
+
+            sexos           = _to_list(r["sexos"]),
+            tipos_form      = _to_list(r["tipos_form"]),
+            op_espec_basica = _to_list(r["op_espec_basica"]),
+            op_entrada_dir  = _to_list(r["op_entrada_dir"]),
+            etapas          = _to_list(r["etapas"]),
+            min_dur         = int(r["min_dur"]) if pd.notna(r["min_dur"]) else 1,
+            max_dur         = int(r["max_dur"]) if pd.notna(r["max_dur"]) else 6,
+            min_emissao     = int(r["min_emissao"]) if pd.notna(r["min_emissao"]) else 1980,
+            max_emissao     = int(r["max_emissao"]) if pd.notna(r["max_emissao"]) else 2026,
+        )
+
+    # Carrega opções e limites
+    op = carregar_opcoes_filtros()
+
+    # -------------------- FILTROS (topo) --------------------
+    st.info("🔎 **Sessão de Filtros - Use os controles abaixo para refinar os resultados.**")
+
+    # Linha 1 — filtros clássicos
+    c1, c2, c3, c4 = st.columns(4)
+    selected_programa = c1.selectbox(
+        "Programas", options=["(Todos)"] + op["programas"], index=0, key="f_programa",
+    )
+    selected_instituicao = c2.selectbox(
+        "Instituição", options=["(Todas)"] + op["instituicoes"], index=0, key="f_instituicao",
+    )
+    selected_regiao = c3.selectbox(
+        "Região", options=["(Todas)"] + op["regioes"], index=0, key="f_regiao",
+    )
+    selected_uf = c4.selectbox(
+        "UF", options=["(Todas)"] + op["ufs"], index=0, key="f_uf",
+    )
+
+    # Linha 2 — novos selects
+    c5, c6, c7, c8 = st.columns(4)
+    selected_sexo = c5.selectbox(
+        "Sexo do médico", options=["(Todos)"] + op["sexos"], index=0, key="f_sexo",
+    )
+    selected_tipo_form = c6.selectbox(
+        "Tipo de formação", options=["(Todos)"] + op["tipos_form"], index=0, key="f_tipo_form",
+    )
+    selected_espec_basica = c7.selectbox(
+        "Especialidade básica?", options=["(Ambos)"] + op["op_espec_basica"], index=0, key="f_espec_basica",
+    )
+    selected_entrada_dir = c8.selectbox(
+        "Entrada direta?", options=["(Ambos)"] + op["op_entrada_dir"], index=0, key="f_entrada_dir",
+    )
+
+    # Linha 3 — sliders adicionais
+    s1, s2 = st.columns(2)
+    range_duracao = s1.slider(
+        "Duração (anos)",
+        min_value=op["min_dur"], max_value=op["max_dur"],
+        value=(op["min_dur"], op["max_dur"]), step=1, key="f_duracao",
+    )
     
-    st.info("Os downloads abaixo respeitam os **filtros** (quando aplicados).")
+    # Ano de emissão do certificado: padrão 2012–2024 (respeitando os limites)
+    padrao_emissao_min = max(op["min_emissao"], 2012)
+    padrao_emissao_max = min(op["max_emissao"], 2024)
+    range_emissao = s2.slider(
+        "Ano de emissão do certificado [Filtro padrão para Dados Qualitativos]",
+        min_value=op["min_emissao"], max_value=op["max_emissao"],
+        value=(padrao_emissao_min, padrao_emissao_max),
+        step=1, key="f_emissao",
+    )
 
-    df = consultar_agrupado_por_filtros(
-        programa=selected_programa,
-        instituicao=selected_instituicao,
-        regiao=selected_regiao,
-        uf=selected_uf,
-        ano_inicio_range=range_inicio,
-        ano_termino_range=range_termino
+    # Linha 4 — sliders de período de formação
+    s3, s4 = st.columns(2)
+
+    # valores padrão desejados, mas respeitando os limites do dataset
+    padrao_ini_min = max(op["min_ini"], 2010)
+    padrao_ini_max = min(op["max_ini"], 2022)
+    range_inicio = s3.slider(
+        "Ano de início da formação [Filtro padrão para Dados Qualitativos]",
+        min_value=op["min_ini"], max_value=op["max_ini"],
+        value=(padrao_ini_min, padrao_ini_max),
+        step=1, key="f_range_inicio",
+    )
+
+
+    # Término: padrão 2010–2024
+    padrao_fim_min = max(op["min_fim"], 2010)
+    padrao_fim_max = min(op["max_fim"], 2024)
+    range_termino = s4.slider(
+        "Ano de término da formação [Filtro padrão para Dados Qualitativos]",
+        min_value=op["min_fim"], max_value=op["max_fim"],
+        value=(padrao_fim_min, padrao_fim_max),
+        step=1, key="f_range_termino",
+    )
+
+    st.caption("Os gráficos abaixo respeitam os **filtros** quando aplicados.")
+
+    # =================================================================
+    # WHERE baseado nos ALIASES (para Grandes Números)
+    # =================================================================
+    def _where_from_filters() -> str:
+        cond = []
+        cond.append("LOWER(TRIM(validacao_final)) = 'sim'")
+
+        if selected_programa and selected_programa != "(Todos)":
+            cond.append(f"programa = '{selected_programa}'")
+        if selected_instituicao and selected_instituicao != "(Todas)":
+            cond.append(f"instituicao = '{selected_instituicao}'")
+        if selected_regiao and selected_regiao != "(Todas)":
+            cond.append(f"regiao = '{selected_regiao}'")
+        if selected_uf and selected_uf != "(Todas)":
+            cond.append(f"uf = '{selected_uf}'")
+
+        if "selected_sexo" in globals() and selected_sexo and selected_sexo != "(Todos)":
+            cond.append(f"sexo = '{selected_sexo.lower()}'")
+
+        if "selected_tipo_formacao" in globals() and selected_tipo_formacao and selected_tipo_formacao != "(Todos)":
+            cond.append(f"tipo_formacao = '{selected_tipo_formacao}'")
+
+        if "selected_basica" in globals() and selected_basica and selected_basica != "(Ambos)":
+            cond.append(f"esp_basica = '{selected_basica.lower()}'")
+
+        if "selected_entrada" in globals() and selected_entrada and selected_entrada != "(Ambos)":
+            cond.append(f"entrada_direta = '{selected_entrada.lower()}'")
+
+        # Duração [min, max] — inclui nulos
+        if "range_duracao" in globals() and isinstance(range_duracao, (list, tuple)) and len(range_duracao) == 2:
+            dmin, dmax = range_duracao
+            cond.append(f"(duracao_anos BETWEEN {int(dmin)} AND {int(dmax)} OR duracao_anos IS NULL)")
+
+        # Ano de início [min, max] — inclui nulos
+        if "range_inicio" in globals() and isinstance(range_inicio, (list, tuple)) and len(range_inicio) == 2:
+            amin, amax = range_inicio
+            cond.append(f"(ano_ini BETWEEN {int(amin)} AND {int(amax)} OR ano_ini IS NULL)")
+
+        # Ano de término [min, max] — inclui nulos
+        if "range_termino" in globals() and isinstance(range_termino, (list, tuple)) and len(range_termino) == 2:
+            tmin, tmax = range_termino
+            cond.append(f"(ano_fim BETWEEN {int(tmin)} AND {int(tmax)} OR ano_fim IS NULL)")
+
+        # Ano de emissão [min, max] — inclui nulos
+        if "range_emissao" in globals() and isinstance(range_emissao, (list, tuple)) and len(range_emissao) == 2:
+            emin, emax = range_emissao
+            cond.append(f"(ano_emissao BETWEEN {int(emin)} AND {int(emax)} OR ano_emissao IS NULL)")
+
+        return ("WHERE " + " AND ".join(cond)) if cond else ""
+
+    # =================================================================
+    # WHERE para a TABELA BRUTA (para gráficos) — nomes reais das colunas
+    # =================================================================
+    def where_for_raw_table(prefix_with_and: bool = False) -> str:
+        cond = []
+
+        if selected_programa and selected_programa != "(Todos)":
+            cond.append(f"{COL_PROG} = '{selected_programa}'")
+        if selected_instituicao and selected_instituicao != "(Todas)":
+            cond.append(f"{COL_INST} = '{selected_instituicao}'")
+        if selected_regiao and selected_regiao != "(Todas)":
+            cond.append(f"{COL_REGIAO} = '{selected_regiao}'")
+        if selected_uf and selected_uf != "(Todas)":
+            cond.append(f"UPPER({COL_UF}) = '{selected_uf}'")
+
+        if "selected_sexo" in globals() and selected_sexo and selected_sexo != "(Todos)":
+            cond.append(f"LOWER(TRIM({COL_SEXO})) = '{selected_sexo.lower()}'")
+
+        if "selected_tipo_form" in globals() and selected_tipo_form and selected_tipo_form != "(Todos)":
+            cond.append(f"{COL_TIPO_FORM} = '{selected_tipo_form}'")
+
+        if "selected_espec_basica" in globals() and selected_espec_basica and selected_espec_basica != "(Ambos)":
+            cond.append(f"LOWER(TRIM({COL_ESPEC_BASICA})) = '{selected_espec_basica.lower()}'")
+
+        if "selected_entrada_dir" in globals() and selected_entrada_dir and selected_entrada_dir != "(Ambos)":
+            cond.append(f"LOWER(TRIM({COL_ENTRADA_DIR})) = '{selected_entrada_dir.lower()}'")
+
+        if "range_duracao" in globals() and isinstance(range_duracao, (list, tuple)) and len(range_duracao) == 2:
+            dmin, dmax = range_duracao
+            cond.append(f"CAST({COL_DURACAO} AS INT64) BETWEEN {int(dmin)} AND {int(dmax)}")
+
+        if "range_inicio" in globals() and isinstance(range_inicio, (list, tuple)) and len(range_inicio) == 2:
+            amin, amax = range_inicio
+            cond.append(f"CAST({COL_ANO_INI} AS INT64) BETWEEN {int(amin)} AND {int(amax)}")
+
+        if "range_termino" in globals() and isinstance(range_termino, (list, tuple)) and len(range_termino) == 2:
+            tmin, tmax = range_termino
+            cond.append(f"CAST({COL_ANO_FIM} AS INT64) BETWEEN {int(tmin)} AND {int(tmax)}")
+
+        if "range_emissao" in globals() and isinstance(range_emissao, (list, tuple)) and len(range_emissao) == 2:
+            emin, emax = range_emissao
+            cond.append(f"CAST({COL_ANO_EMISSAO} AS INT64) BETWEEN {int(emin)} AND {int(emax)}")
+
+        if not cond:
+            return ""
+        return ("AND " if prefix_with_and else "WHERE ") + " AND ".join(cond)
+
+    # =================================================================
+    # Grandes Números  (mantém como estava)
+    # =================================================================
+    @st.cache_data(ttl=900, show_spinner=True)
+    def consultar_big_numbers(where_clause: str) -> dict:
+        sql = f"""
+        WITH base AS (
+        SELECT
+            LOWER(TRIM(validacao_final))                         AS vf,
+            {COL_PROG}                                           AS programa,
+            {COL_INST}                                           AS instituicao,
+            {COL_REGIAO}                                         AS regiao,
+            UPPER({COL_UF})                                      AS uf,
+            LOWER(TRIM(medico_sexo_inferido))                    AS sexo,
+            formacao_padronizada_tipo                            AS tipo_formacao,
+            LOWER(TRIM(formacao_padronizada_especialidade_basica)) AS esp_basica,
+            LOWER(TRIM(formacao_padronizada_entrada_direta))     AS entrada_direta,
+            CAST(formacao_duracao_anos AS INT64)                 AS duracao_anos,
+            CAST(formacao_inicio_ano  AS INT64)                  AS ano_ini,
+            CAST(formacao_termino_ano AS INT64)                  AS ano_fim,
+            CAST(certificado_emissao_ano AS INT64)               AS ano_emissao,
+            LOWER(TRIM(validacao_final))                         AS validacao_final,
+            medico_nome_hash,
+            certificado_hash
+        FROM `{TABLE_ID}`
         )
-    st.success("✅ Consulta finalizada com sucesso!")
+        SELECT
+        COUNT(DISTINCT IF(vf = 'sim', certificado_hash, NULL))                        AS cert_validos,
+        COUNT(DISTINCT IF(vf != 'sim' OR vf IS NULL, certificado_hash, NULL))         AS cert_invalidos,
 
-    col1, col2, col3, col4 = st.columns(4)
+        COUNT(DISTINCT IF(vf = 'sim', instituicao,       NULL))                       AS instituicoes_validas,
+        COUNT(DISTINCT IF(vf = 'sim', programa,          NULL))                       AS programas_validos,
+        COUNT(DISTINCT IF(vf = 'sim', regiao,            NULL))                       AS regioes_validas,
+        COUNT(DISTINCT IF(vf = 'sim', uf,                NULL))                       AS ufs_validas,
+        COUNT(DISTINCT IF(vf = 'sim', medico_nome_hash,  NULL))                       AS medicos_formados_validos
+        FROM base
+        {where_clause}
+        """
+        df = client.query(sql).result().to_dataframe()
+        row = df.iloc[0].to_dict()
+        return {k: int(row.get(k, 0) or 0) for k in row.keys()}
 
-    with col1:
-        st.metric(
-            label="🎓 Total de Residentes Certificados",
-            value=f"{df['qtd_certificados'].sum():,}".replace(",", "."),
-            help="Soma total de certificados válidos emitidos"
+    where_clause = _where_from_filters()
+    nums = consultar_big_numbers(where_clause)
+
+    st.info("**📏 Sessão de Grandes Números — visão rápida baseada nos filtros aplicados**")
+
+    fmt = lambda v: f"{int(v):,}".replace(",", ".")
+    c1, c2, c3, c4 = st.columns(4)
+    c5, c6, c7, _ = st.columns(4)
+
+    c1.metric("Certificados válidos",     fmt(nums["cert_validos"]))
+    c2.metric("Instituições (dist.)",     fmt(nums["instituicoes_validas"]))
+    c3.metric("Programas (dist.)",        fmt(nums["programas_validos"]))
+    c4.metric("Regiões (dist.)",          fmt(nums["regioes_validas"]))
+    c5.metric("UFs (dist.)",              fmt(nums["ufs_validas"]))
+    c6.metric("Médicos formados (dist.)", fmt(nums["medicos_formados_validos"]))
+
+    # ------------------------------------------------------------
+    # Gráficos — CERTIFICADOS
+    # ------------------------------------------------------------
+
+    st.info("📊 **Certificados — os gráficos abaixo respeitam os filtros aplicados**")
+
+    def _run(sql: str) -> pd.DataFrame:
+        return client.query(sql).result().to_dataframe()
+
+    # ========= 1) BARRAS POR ANO =========
+    with st.expander("Quantos certificados foram emitidos por ano?", expanded=True):
+        sql = f"""
+        SELECT
+          CAST({COL_ANO_EMISSAO} AS INT64) AS ano,
+          COUNT(DISTINCT certificado_hash) AS qtd
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)}
+        GROUP BY ano
+        HAVING ano IS NOT NULL
+        ORDER BY ano
+        """
+        df_y = _run(sql)
+
+        fig = bar_yoy_trend(
+            df_y, x="ano", y="qtd",
+            title="Série — Qtd por ano",
+            x_is_year=True, fill_missing_years=True,
+            show_ma=True, ma_window=3,
+            show_mean=True, show_trend=True,
+            y_label="Quantidade",
+            legend_pos="top",
         )
-
-    with col2:
-        st.metric(
-            label="🏥 Total de Instituições Certificadoras",
-            value=f"{df['instituicao'].nunique():,}".replace(",", "."),
-            help="Número único de instituições com residentes certificados"
-        )
-
-    with col3:
-        st.metric(
-            label="📘 Total de Programas",
-            value=f"{df['programa'].nunique():,}".replace(",", "."),
-            help="Número único de programas diferentes com residentes certificados"
-        )
-
-    with col4:
-        st.metric(
-            label="📅 Período (anos)",
-            value=f"{df['ano_inicio'].min()} - {df['ano_termino'].max()}",
-            help="Intervalo de anos coberto pelos dados"
-        )
-
-    st.markdown("---")
-
-    with st.expander("🏥 Quais instituições mais certificaram residentes?"):
-        df_agrupado = df.groupby("instituicao", as_index=False)["qtd_certificados"].sum()
-        df_agrupado = df_agrupado.sort_values(by="qtd_certificados", ascending=False)
-        
-        fig = pareto_plotly(df_agrupado, col="instituicao", valor="qtd_certificados")
         st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
-    
-    with st.expander("🎓 Quais programas mais certificaram residentes?"):
-        top_inst = df.groupby("instituicao")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
-        st.dataframe(top_inst.reset_index(), use_container_width=True)
+    with st.expander("Quantos certificados por sexo do médico?", expanded=True):
+        sql = f"""
+        SELECT
+            COALESCE(LOWER(TRIM(medico_sexo_inferido)), '(não informado)') AS sexo,
+            COUNT(DISTINCT certificado_hash) AS qtd
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)}
+        GROUP BY sexo
+        ORDER BY qtd DESC
+        """
+        df_sexo = _run(sql)
 
-    with st.expander("📊 Qual a distribuição de certificados por ano?"):
-        st.bar_chart(df.groupby("ano_termino")["qtd_certificados"].sum())
+        cores = {
+            "masculino": "#60A5FA",        # blue-400
+            "feminino": "#F87171",       # red-400
+            "Outros": "#94A3B8",          # slate-400
+            "(não informado)": "#94A3B8",
+        }
 
-    with st.expander("🗺️ Como os certificados se distribuem por UF?"):
-        grafico_uf = df.groupby("uf")["qtd_certificados"].sum().sort_values(ascending=False)
-        st.bar_chart(grafico_uf)
+        fig = pie_standard(
+            df_sexo, names="sexo", values="qtd",top_n=2,
+            title="Distribuição por sexo",
+            color_discrete_map=cores
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("🎓 Quais os programas mais comuns?"):
-        top_prog = df.groupby("programa")["qtd_certificados"].sum().sort_values(ascending=False).head(10)
-        st.dataframe(top_prog.reset_index(), use_container_width=True)
+    # ---------- Programas ----------
+    with st.expander("Quais foram os programas que mais certificados (Top 10)?", expanded=True):
+        sql_prog = f"""
+        SELECT
+        {COL_PROG} AS programa,
+        COUNT(DISTINCT certificado_hash) AS qtd
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)}
+        GROUP BY programa
+        HAVING programa IS NOT NULL
+        """
+        df_prog = _run(sql_prog)
 
+        if df_prog.empty:
+            st.info("Sem dados para os filtros atuais.")
+        else:
+            fig = pareto_plotly(
+                df=df_prog,
+                col="programa",
+                valor="qtd",
+                titulo="Programas com mais certificados (válidos) — Pareto",
+                x_label="Certificados (distintos)",
+                y_label="Programa",
+                thresholds=(0.80, 0.95),   # A=0–80%, B=80–95%, C=95–100%
+                top_n=10,
+                orientation="h",
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
+    # ---------- Instituições ----------
+    with st.expander("Quais são as Instituições que mais emitiram certificados (Top 10)?", expanded=True):
+        sql_inst = f"""
+        SELECT
+        {COL_INST} AS instituicao,
+        COUNT(DISTINCT certificado_hash) AS qtd
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)} 
+        GROUP BY instituicao
+        HAVING instituicao IS NOT NULL
+        """
+        df_inst = _run(sql_inst)
+
+        if df_inst.empty:
+            st.info("Sem dados para os filtros atuais.")
+        else:
+            fig = pareto_plotly(
+                df=df_inst,
+                col="instituicao",
+                valor="qtd",
+                titulo="Instituições com mais certificados (válidos) — Pareto",
+                x_label="Certificados (distintos)",
+                y_label="Instituição",
+                thresholds=(0.80, 0.95),
+                top_n=10,
+                orientation="h",
+            )
+            st.plotly_chart(fig, use_container_width=True)
