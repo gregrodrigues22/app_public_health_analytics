@@ -11,3 +11,12 @@ __pycache__/
 *.log
 *.sqlite3
 
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.vscode/
+.idea/
+*.log

@@ -1,8 +1,10 @@
 # ---------------------------------------------------------------
 # Set up
 # ---------------------------------------------------------------
+import re
 import streamlit as st
 import plotly.graph_objects as go
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import json
@@ -16,6 +18,10 @@ from google.cloud.bigquery import ScalarQueryParameter as Q
 from src.graph import pareto_plotly  
 from src.graph import bar_yoy_trend
 from src.graph import pie_standard
+from src.graph import bar_total_por_grupo
+from src.graph import choropleth_por_regiao
+from src.graph import choropleth_por_uf
+from src.graph import heatmap_absoluto
 import plotly.express as px
 
 # ---------------------------------------------------------------
@@ -621,7 +627,7 @@ if aba == "📈 Analytics":
     op = carregar_opcoes_filtros()
 
     # -------------------- FILTROS (topo) --------------------
-    st.info("🔎 **Sessão de Filtros - Use os controles abaixo para refinar os resultados.**")
+    st.info("🔎 **Sessão de Filtros: Use os controles abaixo para refinar os resultados.**")
 
     # Linha 1 — filtros clássicos
     c1, c2, c3, c4 = st.columns(4)
@@ -684,7 +690,6 @@ if aba == "📈 Analytics":
         step=1, key="f_range_inicio",
     )
 
-
     # Término: padrão 2010–2024
     padrao_fim_min = max(op["min_fim"], 2010)
     padrao_fim_max = min(op["max_fim"], 2024)
@@ -716,14 +721,14 @@ if aba == "📈 Analytics":
         if "selected_sexo" in globals() and selected_sexo and selected_sexo != "(Todos)":
             cond.append(f"sexo = '{selected_sexo.lower()}'")
 
-        if "selected_tipo_formacao" in globals() and selected_tipo_formacao and selected_tipo_formacao != "(Todos)":
-            cond.append(f"tipo_formacao = '{selected_tipo_formacao}'")
+        if "selected_tipo_form" in globals() and selected_tipo_form and selected_tipo_form != "(Todos)":
+            cond.append(f"tipo_formacao = '{selected_tipo_form}'")
 
-        if "selected_basica" in globals() and selected_basica and selected_basica != "(Ambos)":
-            cond.append(f"esp_basica = '{selected_basica.lower()}'")
+        if "selected_espec_basica" in globals() and selected_espec_basica and selected_espec_basica != "(Ambos)":
+            cond.append(f"esp_basica = '{selected_espec_basica.lower()}'")
 
-        if "selected_entrada" in globals() and selected_entrada and selected_entrada != "(Ambos)":
-            cond.append(f"entrada_direta = '{selected_entrada.lower()}'")
+        if "selected_entrada_dir" in globals() and selected_entrada_dir and selected_entrada_dir != "(Ambos)":
+            cond.append(f"entrada_direta = '{selected_entrada_dir.lower()}'")
 
         # Duração [min, max] — inclui nulos
         if "range_duracao" in globals() and isinstance(range_duracao, (list, tuple)) and len(range_duracao) == 2:
@@ -823,27 +828,30 @@ if aba == "📈 Analytics":
         SELECT
         COUNT(DISTINCT IF(vf = 'sim', certificado_hash, NULL))                        AS cert_validos,
         COUNT(DISTINCT IF(vf != 'sim' OR vf IS NULL, certificado_hash, NULL))         AS cert_invalidos,
-
         COUNT(DISTINCT IF(vf = 'sim', instituicao,       NULL))                       AS instituicoes_validas,
         COUNT(DISTINCT IF(vf = 'sim', programa,          NULL))                       AS programas_validos,
         COUNT(DISTINCT IF(vf = 'sim', regiao,            NULL))                       AS regioes_validas,
         COUNT(DISTINCT IF(vf = 'sim', uf,                NULL))                       AS ufs_validas,
-        COUNT(DISTINCT IF(vf = 'sim', medico_nome_hash,  NULL))                       AS medicos_formados_validos
+        COUNT(DISTINCT IF(vf = 'sim', medico_nome_hash,  NULL))                       AS medicos_formados_validos,
+        SAFE_DIVIDE(COUNT(DISTINCT IF(vf = 'sim', certificado_hash, NULL)),COUNT(DISTINCT IF(vf = 'sim', medico_nome_hash,  NULL))) AS media_cert_por_medico,
+        AVG(IF(vf = 'sim', duracao_anos, NULL)) AS media_duracao_anos
+
         FROM base
         {where_clause}
         """
         df = client.query(sql).result().to_dataframe()
         row = df.iloc[0].to_dict()
-        return {k: int(row.get(k, 0) or 0) for k in row.keys()}
+        out = {k: (float(row[k]) if k in ['media_cert_por_medico','media_duracao_anos'] else int(row[k] or 0)) for k in row.keys()}
+        return out
 
     where_clause = _where_from_filters()
     nums = consultar_big_numbers(where_clause)
 
-    st.info("**📏 Sessão de Grandes Números — visão rápida baseada nos filtros aplicados**")
+    st.info("**📏 Sessão de Grandes Números: Visão rápida dos números gerais segundo os filtros aplicados**")
 
     fmt = lambda v: f"{int(v):,}".replace(",", ".")
     c1, c2, c3, c4 = st.columns(4)
-    c5, c6, c7, _ = st.columns(4)
+    c5, c6, c7, c8 = st.columns(4)
 
     c1.metric("Certificados válidos",     fmt(nums["cert_validos"]))
     c2.metric("Instituições (dist.)",     fmt(nums["instituicoes_validas"]))
@@ -852,16 +860,20 @@ if aba == "📈 Analytics":
     c5.metric("UFs (dist.)",              fmt(nums["ufs_validas"]))
     c6.metric("Médicos formados (dist.)", fmt(nums["medicos_formados_validos"]))
 
+    fmt_1d  = lambda v: f"{v:.2f}".replace(".", ",")
+    c7.metric("Média de certificados por médico", fmt_1d(nums["media_cert_por_medico"]))
+    c8.metric("Média de duração (anos)",          fmt_1d(nums["media_duracao_anos"]))
+
     # ------------------------------------------------------------
     # Gráficos — CERTIFICADOS
     # ------------------------------------------------------------
 
-    st.info("📊 **Certificados — os gráficos abaixo respeitam os filtros aplicados**")
+    st.info("📊 **Sessão de Gráficos: Visuais para resposta de perguntas segundo os filtros aplicados**")
 
     def _run(sql: str) -> pd.DataFrame:
         return client.query(sql).result().to_dataframe()
 
-    # ========= 1) BARRAS POR ANO =========
+    # ========= Certificados por ano =========
     with st.expander("Quantos certificados foram emitidos por ano?", expanded=True):
         sql = f"""
         SELECT
@@ -875,19 +887,20 @@ if aba == "📈 Analytics":
         ORDER BY ano
         """
         df_y = _run(sql)
+        df_y["qtd"] = pd.to_numeric(df_y["qtd"], errors="coerce").fillna(0).astype(np.int64)
 
         fig = bar_yoy_trend(
             df_y, x="ano", y="qtd",
-            title="Série — Qtd por ano",
+            title="Quantidade de certificados (válidos) emitidos por ano",
             x_is_year=True, fill_missing_years=True,
-            show_ma=True, ma_window=3,
+            show_ma=False, ma_window=0,
             show_mean=True, show_trend=True,
-            y_label="Quantidade",
+            y_label="Certificados (distintos)",
             legend_pos="top",
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("Quantos certificados por sexo do médico?", expanded=True):
+    with st.expander("Quantos certificados foram emitidos por sexo do médico?", expanded=True):
         sql = f"""
         SELECT
             COALESCE(LOWER(TRIM(medico_sexo_inferido)), '(não informado)') AS sexo,
@@ -899,6 +912,7 @@ if aba == "📈 Analytics":
         ORDER BY qtd DESC
         """
         df_sexo = _run(sql)
+        df_sexo["qtd"] = pd.to_numeric(df_sexo["qtd"], errors="coerce").fillna(0).astype(np.int64)
 
         cores = {
             "masculino": "#60A5FA",        # blue-400
@@ -909,13 +923,13 @@ if aba == "📈 Analytics":
 
         fig = pie_standard(
             df_sexo, names="sexo", values="qtd",top_n=2,
-            title="Distribuição por sexo",
-            color_discrete_map=cores
+            title="Quantidade de certificados (válidos) emitidos por sexo do médico",
+            color_discrete_map=cores, legend_pos="below_title",
         )
         st.plotly_chart(fig, use_container_width=True)
 
     # ---------- Programas ----------
-    with st.expander("Quais foram os programas que mais certificados (Top 10)?", expanded=True):
+    with st.expander("Quais foram os programas que mais emitiram certificados (Top 10)?", expanded=True):
         sql_prog = f"""
         SELECT
         {COL_PROG} AS programa,
@@ -927,25 +941,24 @@ if aba == "📈 Analytics":
         HAVING programa IS NOT NULL
         """
         df_prog = _run(sql_prog)
+        df_prog["qtd"] = pd.to_numeric(df_prog["qtd"], errors="coerce").fillna(0).astype(np.int64)
 
         if df_prog.empty:
             st.info("Sem dados para os filtros atuais.")
         else:
-            fig = pareto_plotly(
-                df=df_prog,
-                col="programa",
-                valor="qtd",
-                titulo="Programas com mais certificados (válidos) — Pareto",
+            fig = bar_total_por_grupo(
+                df_prog,
+                grupo_col="programa",
+                valor_col="qtd",     
+                top_n=10,
+                titulo="Programas Top 10 com mais certificados (válidos)",
                 x_label="Certificados (distintos)",
                 y_label="Programa",
-                thresholds=(0.80, 0.95),   # A=0–80%, B=80–95%, C=95–100%
-                top_n=10,
-                orientation="h",
-            )
+                )
             st.plotly_chart(fig, use_container_width=True)
 
     # ---------- Instituições ----------
-    with st.expander("Quais são as Instituições que mais emitiram certificados (Top 10)?", expanded=True):
+    with st.expander("Quais foram as Instituições que mais emitiram certificados (Top 10)?", expanded=True):
         sql_inst = f"""
         SELECT
         {COL_INST} AS instituicao,
@@ -957,19 +970,111 @@ if aba == "📈 Analytics":
         HAVING instituicao IS NOT NULL
         """
         df_inst = _run(sql_inst)
+        df_inst["qtd"] = pd.to_numeric(df_inst["qtd"], errors="coerce").fillna(0).astype(np.int64)
 
         if df_inst.empty:
             st.info("Sem dados para os filtros atuais.")
         else:
-            fig = pareto_plotly(
-                df=df_inst,
-                col="instituicao",
-                valor="qtd",
-                titulo="Instituições com mais certificados (válidos) — Pareto",
+            fig = bar_total_por_grupo(
+                df_inst,
+                grupo_col="instituicao",
+                valor_col="qtd",     
+                top_n=10,
+                titulo="Instituições Top 10 com mais certificados (válidos)",
                 x_label="Certificados (distintos)",
                 y_label="Instituição",
-                thresholds=(0.80, 0.95),
-                top_n=10,
-                orientation="h",
-            )
+                )
             st.plotly_chart(fig, use_container_width=True)
+
+    # ---------- Residentes ----------
+    with st.expander("Quantos Residentes por ano?", expanded=True):
+        sql_residente = f"""
+        SELECT
+            CAST(formacao_ano_residencia AS INT64)                AS ano,
+            formacao_etapa_residencia                             AS etapa,
+            COUNT(DISTINCT IF(LOWER(TRIM(validacao_final))='sim', medico_nome_hash, NULL)) AS qtd
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)}
+        GROUP BY ano, etapa
+        """
+        df_residente = _run(sql_residente)
+        df_residente["ano"] = pd.to_numeric(df_residente["ano"], errors="raise").astype(np.int64)
+        df_residente["qtd"] = pd.to_numeric(df_residente["qtd"], errors="coerce").fillna(0).astype(np.int64)
+        df_residente = df_residente.sort_values(["etapa", "ano"])
+
+        if not df_residente.empty:
+            df_residente["ano"] = pd.to_numeric(df_residente["ano"], errors="coerce")
+            
+        fig = heatmap_absoluto(
+            df_residente,              # já vem com colunas 'ano', 'etapa', 'qtd'
+            row_col="etapa",
+            col_col="ano",
+            value_col="qtd",
+            title="Total de residentes por etapa × ano (absoluto + % no ano)",
+            percent_of="col",          # <<< percentual por ano (coluna)
+            show_totals="col",         # opcional: adiciona linha 'Total' por ano
+            zero_as_blank=True,
+            decimals=1,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ---------- Regiões ----------
+    with st.expander("Quantos certificados foram emitidos por Regiões do País?", expanded=True):
+        sql_reg = f"""
+        SELECT
+        {COL_REGIAO} AS regiao,
+        COUNT(DISTINCT certificado_hash) AS total
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)} 
+        GROUP BY regiao
+        HAVING regiao IS NOT NULL
+        """
+        df_reg = _run(sql_reg)
+        df_reg["total"] = pd.to_numeric(df_reg["total"], errors="coerce").fillna(0).astype(np.int64)
+        df_reg["pct"] = df_reg["total"] / df_reg["total"].sum() * 100
+
+        if df_reg.empty:
+            st.info("Sem dados para os filtros atuais.")
+        else:
+            fig = choropleth_por_regiao(
+                df_reg,
+                region_col="regiao",
+                value_col="total",
+                geojson_local="src/grandes_regioes_json.geojson",  
+                title="Distribuição de Certificados emitidos por Região",
+                show_labels=False
+                )
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ---------- UF ----------
+    with st.expander("Quantos certificados foram emitidos por UF do País?", expanded=True):
+        sql_uf = f"""
+        SELECT
+        {COL_UF} AS uf,
+        COUNT(DISTINCT certificado_hash) AS total
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)} 
+        GROUP BY uf
+        HAVING uf IS NOT NULL
+        """
+        df_uf = _run(sql_uf)
+        df_uf["total"] = pd.to_numeric(df_uf["total"], errors="coerce").fillna(0).astype(np.int64)
+        df_uf["pct"] = df_uf["total"] / df_uf["total"].sum() * 100
+
+        if df_uf.empty:
+            st.info("Sem dados para os filtros atuais.")
+        else:
+            fig = choropleth_por_uf(
+                df_uf,
+                uf_col="uf",
+                value_col="total",
+                geojson_local="src/brazil_geo.geojson",  
+                title="Distribuição de Certificados emitidos por UF",
+                show_labels=False
+                )
+            st.plotly_chart(fig, use_container_width=True)
+
+
