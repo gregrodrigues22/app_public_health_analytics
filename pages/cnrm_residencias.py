@@ -248,7 +248,7 @@ if aba == "📺 Intruções de uso":
     """)
     st.markdown("---")
     st.markdown("### Vídeo passo a passo")
-    st.video('https://youtu.be/O0fZTR70b7I?si=X1afmDxO9RHTUJ6t') 
+    st.video('https://www.loom.com/share/9761f537d2f549e79f3e46f8cb814a6d') 
 
 
 # ---------------------------------------------------------------------
