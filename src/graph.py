@@ -6,144 +6,144 @@ import pandas as pd
 import plotly.express as px
 import re
 from plotly.subplots import make_subplots
-import json
+import json, unicodedata
 import streamlit as st
 from pathlib import Path
+from typing import Union
+import folium
+from folium.features import GeoJsonTooltip
+from streamlit_folium import st_folium
 
 # ------------------------------------------------------------------
 # 1) PARETO genérico
 # ------------------------------------------------------------------
-def pareto_plotly(
+def pareto_barh(
     df: pd.DataFrame,
-    *,
-    col: str,                       # coluna categórica (eixo)
-    valor: str,                     # coluna com a métrica (numérica)
-    titulo: str = "Gráfico de Pareto",
-    x_label: str | None = None,
-    y_label: str | None = None,
-    thresholds: tuple[float, float] = (0.80, 0.95),   # A:0–0.80, B:0.80–0.95, C:0.95–1.00
-    top_n: int | None = None,       # se quiser limitar ao top N
-    orientation: str = "h",         # "h" (horizontal) ou "v" (vertical)
-) -> go.Figure:
-    """
-    Constrói um Pareto genérico:
-    - agrupa por `col`, soma `valor`
-    - ordena desc
-    - calcula % e % acumulado
-    - zonas A/B/C configuráveis por thresholds
-    - desenha barras + linha acumulada (%)
-    - funciona na horizontal (default) ou vertical
+    cat_col: str,
+    value_col: str | None = None,          # None => faz contagem
+    title: str = "",
+    colorbar_title: str = "",
+    highlight_value: str | None = None,    # ex.: "Não identificado"
+):
+    # 1) agrega e ordena
+    if value_col is None:
+        df_agg = df.groupby(cat_col, dropna=False).size().reset_index(name="count")
+    else:
+        df_agg = df.groupby(cat_col, dropna=False)[value_col].sum().reset_index(name="count")
 
-    Retorna: go.Figure
-    """
-    if df.empty or col not in df.columns or valor not in df.columns:
-        fig = go.Figure()
-        fig.update_layout(
-            title="Sem dados",
-            template="plotly_white",
-            height=320, margin=dict(l=30, r=20, t=50, b=40),
-        )
-        return fig
+    dfp = df_agg.sort_values("count", ascending=False).reset_index(drop=True)
+    dfp[cat_col] = dfp[cat_col].astype(str)
+    total = dfp["count"].sum()
+    dfp["pct"] = 100 * dfp["count"] / total
+    dfp["cum_pct"] = dfp["pct"].cumsum()
+    dfp["label_text"] = [f"{c:,} ({p:.1f}%)".replace(",", ".") for c, p in zip(dfp["count"], dfp["pct"])]
+    cats = dfp[cat_col]
 
-    # agrega e ordena
-    d = (
-        df.groupby(col, as_index=False)[valor]
-        .sum()
-        .sort_values(valor, ascending=False)
-        .reset_index(drop=True)
+    # 2) barras horizontais
+    fig = go.Figure(go.Bar(
+        y=cats,
+        x=dfp["count"],
+        orientation="h",
+        text=dfp["label_text"],
+        textposition="outside",
+        cliponaxis=False,
+        name="Quantidade",
+        marker=dict(
+            color=dfp["count"],
+            colorscale="Blues",
+            colorbar=dict(title=colorbar_title or "Quantidade", x=0.90, xanchor="left")
+        ),
+        hovertemplate="<b>%{y}</b><br>Qtde: %{x}<extra></extra>",
+    ))
+
+    # 3) curva de Pareto no eixo superior (x2)
+    fig.add_trace(go.Scatter(
+        x=dfp["cum_pct"],
+        y=cats,
+        mode="lines+markers+text",
+        line=dict(color="black", width=3, shape="spline"),
+        marker=dict(size=8, color="white", line=dict(color="black", width=2)),
+        text=[f"{v:.1f}%" for v in dfp["cum_pct"]],
+        textposition="middle right",
+        name="Acumulado (%)",
+        xaxis="x2",
+        hovertemplate="<b>%{y}</b><br>Acumulado: %{x:.1f}%<extra></extra>",
+    ))
+
+    # 4) layout / eixos
+    xmax = float(dfp["count"].max()) * 1.45
+    left_margin = max(200, int(min(420, cats.map(len).max() * 8)))  # margem para rótulos longos
+
+    fig.update_layout(
+        title=title,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=left_margin, r=160, t=110, b=90),  # +top, +bottom
+        height=max(440, 26 * len(dfp) + 170),
+        legend=dict(
+            orientation="h",
+            y=-0.28, yanchor="top",          # desce a legenda
+            x=0.5, xanchor="center"
+        ),
     )
-    if top_n is not None and top_n > 0:
-        d = d.iloc[:top_n].copy()
+    # domínio x + x2 (deixa um “gutter” à direita para a colorbar)
+    x_domain = [0.0, 0.78]
 
-    total = d[valor].sum()
-    d["pct"] = (d[valor] / total) * 100
-    d["cum_pct"] = d["pct"].cumsum()
+    fig.update_layout(
+        xaxis=dict(
+            domain=x_domain,
+            range=[0, xmax],
+            title="Quantidade",
+            title_standoff=18,                # respiro do título X
+            showgrid=True, gridcolor="rgba(0,0,0,0.08)",
+        ),
+        xaxis2=dict(
+            overlaying="x", side="top",
+            domain=x_domain,
+            range=[0, 105],                   # vai além de 100% para respiro
+            tickvals=[0, 20, 40, 60, 80, 100],
+            ticksuffix="%",
+            showgrid=False,
+            title="Acumulado (%)",
+            title_standoff=10
+        ),
+        yaxis=dict(autorange="reversed", title=""),
+    )
 
-    # zonas
-    a, b = thresholds
-    bins = [0, a * 100, b * 100, 100.0]
-    d["zona"] = pd.cut(d["cum_pct"], bins=bins, labels=["A", "B", "C"], include_lowest=True)
+    # 5) faixas A/B/C (80/95) + linhas guias
+    th_A, th_B = 80, 95
+    for (x0, x1, col) in [(0, th_A, "rgba(46, 204, 113, 0.18)"),
+                          (th_A, th_B, "rgba(243, 156, 18, 0.18)"),
+                          (th_B, 100, "rgba(231, 76, 60, 0.16)")]:
+        fig.add_shape(type="rect", xref="x2", yref="paper",
+                      x0=x0, x1=x1, y0=0, y1=1, fillcolor=col, line=dict(width=0), layer="below")
+    for x in (th_A, th_B):
+        fig.add_shape(type="line", xref="x2", yref="paper",
+                      x0=x, x1=x, y0=0, y1=1, line=dict(color="gray", width=2, dash="dash"))
+    fig.add_annotation(x=th_A/2, y=0.5, xref="x2", yref="paper",
+                       text="<b>A</b>", showarrow=False, font=dict(size=20, color="rgba(0,0,0,0.6)"))
+    fig.add_annotation(x=(th_A+th_B)/2, y=0.5, xref="x2", yref="paper",
+                       text="<b>B</b>", showarrow=False, font=dict(size=20, color="rgba(0,0,0,0.6)"))
+    fig.add_annotation(x=(th_B+100)/2, y=0.5, xref="x2", yref="paper",
+                       text="<b>C</b>", showarrow=False, font=dict(size=20, color="rgba(0,0,0,0.6)"))
 
-    # cores das zonas (fundo)
-    cores = {"A": "#d4f4dd", "B": "#ffe5b4", "C": "#f9d5d3"}
-
-    # shapes de zona (depende da orientação)
-    shapes = []
-    if orientation == "h":
-        # horizontal: x = valor acumulado, y = paper
-        for z in ["A", "B", "C"]:
-            if (d["zona"] == z).any():
-                x1 = d.loc[d["zona"] == z, valor].cumsum().max()
-                shapes.append(dict(
-                    type="rect", xref="x", yref="paper",
-                    x0=0, y0=0, x1=x1, y1=1,
-                    fillcolor=cores[z], opacity=0.20, layer="below", line_width=0,
-                ))
-    else:
-        # vertical: y = valor acumulado, x = paper
-        for z in ["A", "B", "C"]:
-            if (d["zona"] == z).any():
-                y1 = d.loc[d["zona"] == z, valor].cumsum().max()
-                shapes.append(dict(
-                    type="rect", xref="paper", yref="y",
-                    x0=0, y0=0, x1=1, y1=y1,
-                    fillcolor=cores[z], opacity=0.20, layer="below", line_width=0,
-                ))
-
-    # eixo
-    eixo_cat = d[col].astype(str).tolist()
-
-    fig = go.Figure()
-
-    # barras
-    if orientation == "h":
-        fig.add_bar(
-            y=d[col], x=d[valor], orientation="h",
-            marker=dict(color=d[valor], colorscale="Blues",
-                        colorbar=dict(title=y_label or "Valor")),
-            text=[f"{v:,.0f}".replace(",", ".") for v in d[valor]],
-            textposition="inside", insidetextanchor="middle",
-            name=y_label or "Valor",
-            hovertemplate=f"<b>%{{y}}</b><br>{valor}: %{{x:,}}<extra></extra>",
+    # 6) destaque opcional de uma categoria
+    if highlight_value is not None and highlight_value in set(dfp[cat_col]):
+        colors = [("crimson" if v == highlight_value else c)
+                  for v, c in zip(dfp[cat_col], dfp["count"])]
+        fig.update_traces(selector=dict(type="bar"),
+                          marker=dict(color=colors, colorscale="Blues",
+                                      colorbar=dict(title=colorbar_title or "Quantidade",
+                                                    x=0.90, xanchor="left")))
+    # Evita cortes na curva/labels
+    fig.update_traces(
+        selector=dict(type="bar"),
+        marker=dict(
+            color=dfp["count"],
+            colorscale="Blues",
+            colorbar=dict(title=colorbar_title or "Quantidade", x=0.88, xanchor="left")  # antes ~0.90
         )
-        # linha acumulada %
-        fig.add_scatter(
-            x=d[valor].cumsum(), y=d["cum_pct"], yaxis="y2",
-            mode="lines+markers", name="Acumulado (%)",
-            line=dict(color="black", width=2), marker=dict(size=6, color="black"),
-        )
-        fig.update_layout(
-            title=titulo,
-            xaxis=dict(title=x_label or valor),
-            yaxis=dict(title=y_label or col, automargin=True),
-            yaxis2=dict(overlaying="y", side="right", range=[0, 100], ticksuffix="%", title="Acumulado (%)"),
-            shapes=shapes, template="plotly_white",
-            margin=dict(l=180, r=60, t=70, b=40),
-        )
-    else:
-        fig.add_bar(
-            x=d[col], y=d[valor], orientation="v",
-            marker=dict(color=d[valor], colorscale="Blues",
-                        colorbar=dict(title=y_label or "Valor")),
-            text=[f"{v:,.0f}".replace(",", ".") for v in d[valor]],
-            textposition="outside",
-            name=y_label or "Valor",
-            hovertemplate=f"<b>%{{x}}</b><br>{valor}: %{{y:,}}<extra></extra>",
-        )
-        fig.add_scatter(
-            x=d[col], y=d[valor].cumsum() / total * 100,
-            yaxis="y2", mode="lines+markers", name="Acumulado (%)",
-            line=dict(color="black", width=2), marker=dict(size=6, color="black"),
-        )
-        fig.update_layout(
-            title=titulo,
-            xaxis=dict(title=x_label or col, categoryorder="array", categoryarray=eixo_cat),
-            yaxis=dict(title=y_label or valor),
-            yaxis2=dict(overlaying="y", side="right", range=[0,100], ticksuffix="%", title="Acumulado (%)"),
-            shapes=shapes, paper_bgcolor="white",
-            margin=dict(l=60, r=60, t=70, b=80),
-        )
-
+    )
     return fig
 
 # ------------------------------------------------------------------
@@ -703,130 +703,90 @@ def choropleth_por_regiao(
 # ------------------------------------------------------------------
 # 6) Gráfico de Mapa UF
 # ------------------------------------------------------------------
-# Reaproveite os helpers do arquivo anterior:
-def fmt_num(x: float, casas: int = 0) -> str:
-    s = f"{x:,.{casas}f}"
-    return s.replace(",", "X").replace(".", ".").replace("X", ",")
-
-def fmt_pct(p: float, casas: int = 1) -> str:
-    s = f"{p:.{casas}f}".replace(".", ",")
-    return s + "%"
-
-# Mapeamento UF -> nome por extenso (caso o geojson use "name")
-UF_TO_NOME = {
-    "AC":"Acre","AL":"Alagoas","AP":"Amapá","AM":"Amazonas","BA":"Bahia",
-    "CE":"Ceará","DF":"Distrito Federal","ES":"Espírito Santo","GO":"Goiás",
-    "MA":"Maranhão","MT":"Mato Grosso","MS":"Mato Grosso do Sul","MG":"Minas Gerais",
-    "PA":"Pará","PB":"Paraíba","PR":"Paraná","PE":"Pernambuco","PI":"Piauí",
-    "RJ":"Rio de Janeiro","RN":"Rio Grande do Norte","RS":"Rio Grande do Sul",
-    "RO":"Rondônia","RR":"Roraima","SC":"Santa Catarina","SP":"São Paulo",
-    "SE":"Sergipe","TO":"Tocantins"
+SIGLA2NOME = {
+    "AC":"Acre","AL":"Alagoas","AP":"Amapá","AM":"Amazonas","BA":"Bahia","CE":"Ceará",
+    "DF":"Distrito Federal","ES":"Espírito Santo","GO":"Goiás","MA":"Maranhão",
+    "MT":"Mato Grosso","MS":"Mato Grosso do Sul","MG":"Minas Gerais","PA":"Pará",
+    "PB":"Paraíba","PR":"Paraná","PE":"Pernambuco","PI":"Piauí","RJ":"Rio de Janeiro",
+    "RN":"Rio Grande do Norte","RS":"Rio Grande do Sul","RO":"Rondônia","RR":"Roraima",
+    "SC":"Santa Catarina","SP":"São Paulo","SE":"Sergipe","TO":"Tocantins",
 }
 
-# Posições aproximadas (lon, lat) para rótulos por UF — opcional
-STATE_LABEL_POS = {
-    "AC": (-70.3, -9.5), "AL": (-36.6, -9.6), "AP": (-51.1,  1.5), "AM": (-63.5, -4.5),
-    "BA": (-41.9,-12.5), "CE": (-39.5, -5.0), "DF": (-47.9,-15.8), "ES": (-40.5,-19.5),
-    "GO": (-49.5,-15.9), "MA": (-45.5, -5.2), "MT": (-56.1,-13.2), "MS": (-54.5,-20.6),
-    "MG": (-44.3,-18.5), "PA": (-52.0, -2.8), "PB": (-36.6, -7.2), "PR": (-51.6,-24.5),
-    "PE": (-37.9, -8.5), "PI": (-43.0, -7.5), "RJ": (-42.5,-22.5), "RN": (-36.6, -5.9),
-    "RS": (-53.0,-30.3), "RO": (-62.0,-10.8), "RR": (-61.3,  2.0), "SC": (-50.5,-27.0),
-    "SP": (-48.0,-22.5), "SE": (-37.3,-10.5), "TO": (-48.5,-10.0),
-}
+@st.cache_data
+def _load_gj(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
-def choropleth_por_uf(
-    df: pd.DataFrame,
+def folium_mapa_uf(
+    df_uf: pd.DataFrame,
+    geojson_path: str,
     *,
-    uf_col: str = "uf",
-    value_col: str = "total",
-    geojson_local: str = "src/brazil_geo.geojson",
-    title: str = "Distribuição de Certificados por UF",
-    show_labels: bool = False,
-    vmax_quantile: float = 0.95,
-):
-    if df.empty or uf_col not in df.columns or value_col not in df.columns:
-        return px.choropleth(title="Sem dados para exibir")
+    uf_col="uf",
+    value_col="total",
+    titulo="Distribuição de Certificados por UF",
+) -> folium.Map:
 
-    UF_TO_NOME = {
-        "AC":"Acre","AL":"Alagoas","AP":"Amapá","AM":"Amazonas","BA":"Bahia",
-        "CE":"Ceará","DF":"Distrito Federal","ES":"Espírito Santo","GO":"Goiás",
-        "MA":"Maranhão","MT":"Mato Grosso","MS":"Mato Grosso do Sul","MG":"Minas Gerais",
-        "PA":"Pará","PB":"Paraíba","PR":"Paraná","PE":"Pernambuco","PI":"Piauí",
-        "RJ":"Rio de Janeiro","RN":"Rio Grande do Norte","RS":"Rio Grande do Sul",
-        "RO":"Rondônia","RR":"Roraima","SC":"Santa Catarina","SP":"São Paulo",
-        "SE":"Sergipe","TO":"Tocantins"
-    }
+    # --- prepara DF
+    d = df_uf.copy()
+    d[uf_col] = d[uf_col].astype(str).str.strip().str.upper()
+    d[value_col] = pd.to_numeric(d[value_col], errors="coerce").fillna(0)
+    d = d.groupby(uf_col, as_index=False)[value_col].sum()
+    d["name"] = d[uf_col].map(SIGLA2NOME)
+    d["pct"] = d[value_col] / d[value_col].sum() * 100
 
-    base = pd.DataFrame({"uf": list(UF_TO_NOME.keys())})
-    d = base.merge(df[[uf_col, value_col]].rename(columns={uf_col: "uf"}), on="uf", how="left")
-    d[value_col] = d[value_col].fillna(0)
-    d["uf"] = d["uf"].astype(str).str.upper().str.strip()
+    # --- GeoJSON + injeta total e percentual
+    gj = _load_gj(geojson_path)
+    info = d.set_index("name")[[value_col, "pct"]].to_dict(orient="index")
 
-    total_geral = float(d[value_col].sum()) or 1.0
-    d["pct"] = d[value_col] / total_geral * 100
-    d["tot_txt"] = d[value_col].apply(lambda v: f"{v:,.0f}".replace(",", "."))
-    d["pct_txt"] = d["pct"].apply(lambda p: f"{p:.1f}%".replace(".", ","))
+    for feat in gj.get("features", []):
+        nm = feat.setdefault("properties", {}).get("name")
+        feat["properties"]["total"] = float(info.get(nm, {}).get(value_col, 0))
+        feat["properties"]["pct"] = float(info.get(nm, {}).get("pct", 0))
 
-    gj = json.loads(Path(geojson_local).read_text(encoding="utf-8"))
-    props = gj["features"][0].get("properties", {})
-
-    # Detecta automaticamente o campo de correspondência
-    if "id" in props:
-        feature_key, d["locations"] = "properties.id", d["uf"]
-    elif "sigla" in props:
-        feature_key, d["locations"] = "properties.sigla", d["uf"]
-    elif "SIGLA" in props:
-        feature_key, d["locations"] = "properties.SIGLA", d["uf"]
-    elif "UF" in props:
-        feature_key, d["locations"] = "properties.UF", d["uf"]
-    elif "name" in props:
-        feature_key, d["locations"] = "properties.name", d["uf"].map(UF_TO_NOME)
-    else:
-        # último recurso: alguns geojsons usam o "id" no nível da feature, não em properties
-        if "id" in gj["features"][0]:
-            feature_key, d["locations"] = "id", d["uf"]
-        else:
-            raise ValueError("GeoJSON de UFs sem id/sigla/UF/SIGLA/name (nem id no nível da feature).")
-
-    vmax = float(d[value_col].quantile(vmax_quantile)) or float(d[value_col].max()) or 1.0
-
-    fig = px.choropleth(
-        d, geojson=gj, locations="locations", featureidkey=feature_key,
-        color=value_col, color_continuous_scale=px.colors.sequential.Blues,
-        range_color=(0, vmax), labels={value_col: "Total"}, title=title,
-        custom_data=["tot_txt", "pct_txt", "uf"],
+    # --- cria mapa estático
+    m = folium.Map(
+        location=[-14.2, -52.9],
+        zoom_start=4,
+        tiles="cartodbpositron",
+        zoom_control=False,
     )
-    fig.update_traces(
-        hovertemplate="<b>%{customdata[2]}</b><br>Total: %{customdata[0]}<br>Participação: %{customdata[1]}<extra></extra>",
-        marker_line_color="white", marker_line_width=0.6
-    )
-    fig.update_geos(fitbounds="locations", visible=False)
-    fig.update_layout(margin=dict(l=10,r=10,t=60,b=10), template="plotly_white",
-                      paper_bgcolor="white", plot_bgcolor="#f7f9fb",
-                      coloraxis_colorbar=dict(title="Total"))
+    m.options.update({
+        "scrollWheelZoom": False,
+        "doubleClickZoom": False,
+        "dragging": False,
+        "touchZoom": False,
+        "tap": False,
+    })
 
-    if show_labels:
-        STATE_LABEL_POS = {
-            "AC": (-70.3, -9.5), "AL": (-36.6, -9.6), "AP": (-51.1,  1.5), "AM": (-63.5, -4.5),
-            "BA": (-41.9,-12.5), "CE": (-39.5, -5.0), "DF": (-47.9,-15.8), "ES": (-40.5,-19.5),
-            "GO": (-49.5,-15.9), "MA": (-45.5, -5.2), "MT": (-56.1,-13.2), "MS": (-54.5,-20.6),
-            "MG": (-44.3,-18.5), "PA": (-52.0, -2.8), "PB": (-36.6, -7.2), "PR": (-51.6,-24.5),
-            "PE": (-37.9, -8.5), "PI": (-43.0, -7.5), "RJ": (-42.5,-22.5), "RN": (-36.6, -5.9),
-            "RS": (-53.0,-30.3), "RO": (-62.0,-10.8), "RR": (-61.3,  2.0), "SC": (-50.5,-27.0),
-            "SP": (-48.0,-22.5), "SE": (-37.3,-10.5), "TO": (-48.5,-10.0),
-        }
-        rows = []
-        for _, r in d.iterrows():
-            uf = r["uf"]
-            if uf in STATE_LABEL_POS:
-                lon, lat = STATE_LABEL_POS[uf]
-                rows.append((lon, lat, f"{uf}\n{r['tot_txt']} ({r['pct_txt']})"))
-        if rows:
-            lons, lats, texts = zip(*rows)
-            fig.add_trace(go.Scattergeo(lon=lons, lat=lats, mode="text", text=texts,
-                                        textfont=dict(size=9, color="black"),
-                                        hoverinfo="skip", showlegend=False))
-    return fig
+    # --- Choropleth
+    ch = folium.Choropleth(
+        geo_data=gj,
+        name=titulo,
+        data=d,
+        columns=["name", value_col],
+        key_on="feature.properties.name",
+        fill_color="YlGnBu",
+        fill_opacity=0.85,
+        line_opacity=0.3,
+        nan_fill_color="#f0f0f0",
+        legend_name=value_col,
+        highlight=False,
+        smooth_factor=0,
+        control=False,
+    ).add_to(m)
+
+    # --- Tooltip com total e percentual
+    folium.features.GeoJsonTooltip(
+        fields=["name", "total_txt", "pct_txt"],
+        aliases=["UF", "Total de Certificados", "% do total"],
+        localize=True,
+        sticky=False,
+        labels=True,
+        style=("background-color: white; color: #333; font-size: 12px; "
+            "padding: 6px; border: 1px solid #ccc; border-radius: 4px;"),
+    ).add_to(ch.geojson)
+
+    return m
 
 # ------------------------------------------------------------------
 # 7) Heatmap
@@ -916,4 +876,139 @@ def heatmap_absoluto(
         paper_bgcolor="white", plot_bgcolor="white",
         xaxis=dict(side="bottom", tickangle=45)
     )
+    return fig
+
+# ------------------------------------------------------------------
+# 8) Entradas e Saídas
+# ------------------------------------------------------------------
+def entradas_saidas_bilateral(
+    df: pd.DataFrame,
+    *,
+    in_col: str = "matricula_ingresso_data",
+    out_col: str = "fechamento_conclusao_data",
+    id_candidates: tuple[str, ...] = ("cpf", "aluno_cpf", "cpf_documento"),
+    freq: str = "Q",                           # 'Q' trimestre, 'M' mês, 'Y' ano
+    title: str = "Entradas (+) vs Saídas (–) por período",
+    only_closed: bool = True,                  # filtra apenas quem tem data de saída
+    bar_colors: tuple[str, str] = ("rgb(19, 93, 171)", "rgb(0, 176, 239)"),
+    text_size: int = 20,
+    height: int = 700,
+    width: int | None = None,
+    y_margin_factor: float = 1.5,              # folga no eixo Y para não cortar textos
+) -> go.Figure:
+    """
+    Plota barras bilaterais (Entradas positivas vs Saídas negativas) agregadas por período.
+
+    - Conta CPFs únicos (se houver uma das colunas em `id_candidates`), senão conta linhas.
+    - Agrega por `freq`: 'Q' (trimestre), 'M' (mês), 'Y' (ano).
+    - Saídas são desenhadas negativas para criar o efeito bilateral.
+    - Retorna um `go.Figure`.
+
+    Parâmetros principais:
+        in_col/out_col ......... colunas de data (parse automático)
+        id_candidates .......... ordem de preferência para ID único
+        freq ................... 'Q'|'M'|'Y'
+        only_closed ............ True = mantém apenas registros com data de saída
+        bar_colors ............. (cor entradas, cor saídas)
+        text_size/height/width . ajustes visuais
+    """
+    if df is None or df.empty:
+        fig = go.Figure()
+        fig.update_layout(title="Sem dados", template="plotly_white", height=320)
+        return fig
+
+    dfx = df.copy()
+
+    # parse de datas
+    dfx[in_col]  = pd.to_datetime(dfx[in_col],  errors="coerce")
+    dfx[out_col] = pd.to_datetime(dfx[out_col], errors="coerce")
+
+    if only_closed:
+        dfx = dfx[dfx[out_col].notna()].copy()
+
+    # Escolhe coluna de ID (contagem de CPFs únicos). Se não houver, conta linhas.
+    id_col = next((c for c in id_candidates if c in dfx.columns), None)
+
+    def _group_count(series_dates: pd.Series, label: str) -> pd.Series:
+        idx = series_dates.dt.to_period(freq).dt.to_timestamp()
+        if id_col:
+            s = dfx.groupby(idx)[id_col].nunique()
+        else:
+            s = dfx.groupby(idx).size()
+        s = s.rename(label)
+        return s
+
+    # Séries agregadas
+    entradas = _group_count(dfx[in_col],  "Entradas")
+    saidas   = _group_count(dfx[out_col], "Saídas")
+
+    # Index unificado
+    idx_all = entradas.index.union(saidas.index)
+    entradas = entradas.reindex(idx_all, fill_value=0)
+    saidas   = saidas.reindex(idx_all,   fill_value=0)
+    saidas_neg = -saidas
+
+    df_plot = pd.DataFrame({
+        "periodo": idx_all,
+        "Entradas": entradas,
+        "Saídas": saidas,
+        "Saídas_neg": saidas_neg,
+    })
+
+    # Tickformat conforme freq
+    tickformat = {
+        "Q": "%Y-Q%q",
+        "M": "%b/%y",
+        "Y": "%Y",
+        "A": "%Y",   # alias
+    }.get(freq.upper(), "%Y-%m")  # fallback
+
+    fig = go.Figure()
+
+    fig.add_bar(
+        x=df_plot["periodo"],
+        y=df_plot["Entradas"],
+        name="Entradas",
+        marker_color=bar_colors[0],
+        hovertemplate="Período=%{x|" + tickformat + "}<br>Entradas=%{y:,}<extra></extra>",
+        text=[f"{v:,}" if v > 0 else "" for v in df_plot["Entradas"]],
+        textposition="outside",
+        textfont=dict(size=text_size, color="black"),
+        cliponaxis=False,
+    )
+
+    fig.add_bar(
+        x=df_plot["periodo"],
+        y=df_plot["Saídas_neg"],
+        name="Saídas",
+        marker_color=bar_colors[1],
+        hovertemplate="Período=%{x|" + tickformat + "}<br>Saídas=%{customdata:,}<extra></extra>",
+        customdata=df_plot["Saídas"],
+        text=[f"{v:,}" if v > 0 else "" for v in df_plot["Saídas"]],
+        textposition="outside",
+        textfont=dict(size=text_size, color="black"),
+        cliponaxis=False,
+    )
+
+    fig.update_layout(
+        title=title,
+        barmode="relative",
+        xaxis=dict(title="", tickformat=tickformat),
+        yaxis=dict(title="Quantidade de CPFs", tickformat=","),
+        legend=dict(orientation="h", x=0.5, xanchor="center", y=1.08),
+        height=height,
+        width=width,
+        margin=dict(l=80, r=60, t=90, b=60),
+        paper_bgcolor="white", plot_bgcolor="white",
+    )
+
+    # Folga vertical para não cortar rótulos
+    max_abs = max(
+        int(df_plot["Entradas"].max() if len(df_plot) else 0),
+        int(df_plot["Saídas"].max() if len(df_plot) else 0),
+    )
+    if max_abs > 0:
+        pad = max_abs * y_margin_factor
+        fig.update_yaxes(range=[-pad, pad])
+
     return fig

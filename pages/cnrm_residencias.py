@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import json
+import json, unicodedata
 import os
 from datetime import datetime
 import pytz
@@ -15,15 +15,14 @@ from pathlib import Path
 from google.cloud import bigquery
 from google.cloud import bigquery_storage
 from google.cloud.bigquery import ScalarQueryParameter as Q
-from src.graph import pareto_plotly  
-from src.graph import bar_yoy_trend
-from src.graph import pie_standard
-from src.graph import bar_total_por_grupo
-from src.graph import choropleth_por_regiao
-from src.graph import choropleth_por_uf
-from src.graph import heatmap_absoluto
 import plotly.express as px
+import src.graph as graph
+import folium
+from folium.features import GeoJsonTooltip
+from streamlit_folium import st_folium
 
+st.cache_data.clear()
+st.cache_resource.clear()
 # ---------------------------------------------------------------
 # BigQuery (região e tabela)
 # ---------------------------------------------------------------
@@ -889,7 +888,7 @@ if aba == "📈 Analytics":
         df_y = _run(sql)
         df_y["qtd"] = pd.to_numeric(df_y["qtd"], errors="coerce").fillna(0).astype(np.int64)
 
-        fig = bar_yoy_trend(
+        fig = graph.bar_yoy_trend(
             df_y, x="ano", y="qtd",
             title="Quantidade de certificados (válidos) emitidos por ano",
             x_is_year=True, fill_missing_years=True,
@@ -900,33 +899,61 @@ if aba == "📈 Analytics":
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    with st.expander("Quantos certificados foram emitidos por sexo do médico?", expanded=True):
-        sql = f"""
+    # ---------- Regiões ----------
+    with st.expander("Quantos certificados foram emitidos por Regiões do País?", expanded=True):
+        sql_reg = f"""
         SELECT
-            COALESCE(LOWER(TRIM(medico_sexo_inferido)), '(não informado)') AS sexo,
-            COUNT(DISTINCT certificado_hash) AS qtd
+        {COL_REGIAO} AS regiao,
+        COUNT(DISTINCT certificado_hash) AS total
         FROM `{TABLE_ID}`
         WHERE LOWER(TRIM(validacao_final)) = 'sim'
-        {where_for_raw_table(prefix_with_and=True)}
-        GROUP BY sexo
-        ORDER BY qtd DESC
+        {where_for_raw_table(prefix_with_and=True)} 
+        GROUP BY regiao
+        HAVING regiao IS NOT NULL
         """
-        df_sexo = _run(sql)
-        df_sexo["qtd"] = pd.to_numeric(df_sexo["qtd"], errors="coerce").fillna(0).astype(np.int64)
+        df_reg = _run(sql_reg)
+        df_reg["total"] = pd.to_numeric(df_reg["total"], errors="coerce").fillna(0).astype(np.int64)
+        df_reg["pct"] = df_reg["total"] / df_reg["total"].sum() * 100
 
-        cores = {
-            "masculino": "#60A5FA",        # blue-400
-            "feminino": "#F87171",       # red-400
-            "Outros": "#94A3B8",          # slate-400
-            "(não informado)": "#94A3B8",
-        }
+        if df_reg.empty:
+            st.info("Sem dados para os filtros atuais.")
+        else:
+            fig = graph.pareto_barh(
+                df=df_reg,                 # tem colunas: regiao, total
+                cat_col="regiao",
+                value_col="total",
+                title="Gráfico de Pareto dos Certificados Emitidos por Região",   # ajuste o título
+                colorbar_title="Certificados",
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-        fig = pie_standard(
-            df_sexo, names="sexo", values="qtd",top_n=2,
-            title="Quantidade de certificados (válidos) emitidos por sexo do médico",
-            color_discrete_map=cores, legend_pos="below_title",
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # ---------- UF ----------
+    with st.expander("Quantos certificados foram emitidos por UF do País?", expanded=True):
+        sql_uf = f"""
+        SELECT
+        {COL_UF} AS uf,
+        COUNT(DISTINCT certificado_hash) AS total
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)} 
+        GROUP BY uf
+        HAVING uf IS NOT NULL
+        """
+        df_uf = _run(sql_uf)
+        df_uf["total"] = pd.to_numeric(df_uf["total"], errors="coerce").fillna(0).astype(np.int64)
+        df_uf["pct"] = df_uf["total"] / df_uf["total"].sum() * 100
+
+        if df_uf.empty:
+            st.info("Sem dados para os filtros atuais.")
+        else:
+            fig = graph.pareto_barh(
+                df=df_uf,                 # tem colunas: regiao, total
+                cat_col="uf",
+                value_col="total",
+                title="Gráfico de Pareto dos Certificados Emitidos por UF",   # ajuste o título
+                colorbar_title="Certificados",
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
     # ---------- Programas ----------
     with st.expander("Quais foram os programas que mais emitiram certificados (Top 10)?", expanded=True):
@@ -946,7 +973,7 @@ if aba == "📈 Analytics":
         if df_prog.empty:
             st.info("Sem dados para os filtros atuais.")
         else:
-            fig = bar_total_por_grupo(
+            fig = graph.bar_total_por_grupo(
                 df_prog,
                 grupo_col="programa",
                 valor_col="qtd",     
@@ -975,7 +1002,7 @@ if aba == "📈 Analytics":
         if df_inst.empty:
             st.info("Sem dados para os filtros atuais.")
         else:
-            fig = bar_total_por_grupo(
+            fig = graph.bar_total_por_grupo(
                 df_inst,
                 grupo_col="instituicao",
                 valor_col="qtd",     
@@ -986,8 +1013,37 @@ if aba == "📈 Analytics":
                 )
             st.plotly_chart(fig, use_container_width=True)
 
+    # ---------- Certificados por Sexo ----------
+    with st.expander("Quantos certificados foram emitidos por sexo do médico?", expanded=True):
+        sql = f"""
+        SELECT
+            COALESCE(LOWER(TRIM(medico_sexo_inferido)), '(não informado)') AS sexo,
+            COUNT(DISTINCT certificado_hash) AS qtd
+        FROM `{TABLE_ID}`
+        WHERE LOWER(TRIM(validacao_final)) = 'sim'
+        {where_for_raw_table(prefix_with_and=True)}
+        GROUP BY sexo
+        ORDER BY qtd DESC
+        """
+        df_sexo = _run(sql)
+        df_sexo["qtd"] = pd.to_numeric(df_sexo["qtd"], errors="coerce").fillna(0).astype(np.int64)
+
+        cores = {
+            "masculino": "#60A5FA",        # blue-400
+            "feminino": "#F87171",       # red-400
+            "Outros": "#94A3B8",          # slate-400
+            "(não informado)": "#94A3B8",
+        }
+
+        fig = graph.pie_standard(
+            df_sexo, names="sexo", values="qtd",top_n=2,
+            title="Quantidade de certificados (válidos) emitidos por sexo do médico",
+            color_discrete_map=cores, legend_pos="below_title",
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
     # ---------- Residentes ----------
-    with st.expander("Quantos Residentes por ano?", expanded=True):
+    with st.expander("Qual a quantidade de Residentes por momento do Ciclo de Formação e por Ano?", expanded=True):
         sql_residente = f"""
         SELECT
             CAST(formacao_ano_residencia AS INT64)                AS ano,
@@ -1006,75 +1062,17 @@ if aba == "📈 Analytics":
         if not df_residente.empty:
             df_residente["ano"] = pd.to_numeric(df_residente["ano"], errors="coerce")
             
-        fig = heatmap_absoluto(
+        fig = graph.heatmap_absoluto(
             df_residente,              # já vem com colunas 'ano', 'etapa', 'qtd'
             row_col="etapa",
             col_col="ano",
             value_col="qtd",
-            title="Total de residentes por etapa × ano (absoluto + % no ano)",
-            percent_of="col",          # <<< percentual por ano (coluna)
-            show_totals="col",         # opcional: adiciona linha 'Total' por ano
+            title="Total de residentes por ciclo da formação e ano (absoluto + % no ano)",
+            percent_of="col",         
+            show_totals="col",      
             zero_as_blank=True,
             decimals=1,
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ---------- Regiões ----------
-    with st.expander("Quantos certificados foram emitidos por Regiões do País?", expanded=True):
-        sql_reg = f"""
-        SELECT
-        {COL_REGIAO} AS regiao,
-        COUNT(DISTINCT certificado_hash) AS total
-        FROM `{TABLE_ID}`
-        WHERE LOWER(TRIM(validacao_final)) = 'sim'
-        {where_for_raw_table(prefix_with_and=True)} 
-        GROUP BY regiao
-        HAVING regiao IS NOT NULL
-        """
-        df_reg = _run(sql_reg)
-        df_reg["total"] = pd.to_numeric(df_reg["total"], errors="coerce").fillna(0).astype(np.int64)
-        df_reg["pct"] = df_reg["total"] / df_reg["total"].sum() * 100
-
-        if df_reg.empty:
-            st.info("Sem dados para os filtros atuais.")
-        else:
-            fig = choropleth_por_regiao(
-                df_reg,
-                region_col="regiao",
-                value_col="total",
-                geojson_local="src/grandes_regioes_json.geojson",  
-                title="Distribuição de Certificados emitidos por Região",
-                show_labels=False
-                )
-            st.plotly_chart(fig, use_container_width=True)
-
-    # ---------- UF ----------
-    with st.expander("Quantos certificados foram emitidos por UF do País?", expanded=True):
-        sql_uf = f"""
-        SELECT
-        {COL_UF} AS uf,
-        COUNT(DISTINCT certificado_hash) AS total
-        FROM `{TABLE_ID}`
-        WHERE LOWER(TRIM(validacao_final)) = 'sim'
-        {where_for_raw_table(prefix_with_and=True)} 
-        GROUP BY uf
-        HAVING uf IS NOT NULL
-        """
-        df_uf = _run(sql_uf)
-        df_uf["total"] = pd.to_numeric(df_uf["total"], errors="coerce").fillna(0).astype(np.int64)
-        df_uf["pct"] = df_uf["total"] / df_uf["total"].sum() * 100
-
-        if df_uf.empty:
-            st.info("Sem dados para os filtros atuais.")
-        else:
-            fig = choropleth_por_uf(
-                df_uf,
-                uf_col="uf",
-                value_col="total",
-                geojson_local="src/brazil_geo.geojson",  
-                title="Distribuição de Certificados emitidos por UF",
-                show_labels=False
-                )
-            st.plotly_chart(fig, use_container_width=True)
-
-
+    # ---------- Entradas e Saídas ----------
