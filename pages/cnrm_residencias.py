@@ -17,9 +17,6 @@ from google.cloud import bigquery_storage
 from google.cloud.bigquery import ScalarQueryParameter as Q
 import plotly.express as px
 import src.graph as graph
-import folium
-from folium.features import GeoJsonTooltip
-from streamlit_folium import st_folium
 
 st.cache_data.clear()
 st.cache_resource.clear()
