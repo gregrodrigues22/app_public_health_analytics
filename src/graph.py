@@ -75,12 +75,12 @@ def pareto_barh(
         title=title,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=left_margin, r=160, t=110, b=90),  # +top, +bottom
+        margin=dict(l=left_margin, r=160, t=80, b=40),  # +top, +bottom
         height=max(440, 26 * len(dfp) + 170),
         legend=dict(
             orientation="h",
-            y=-0.28, yanchor="top",          # desce a legenda
-            x=0.5, xanchor="center"
+            y=1.02, yanchor="bottom",          # desce a legenda
+            x=0.9, xanchor="center"
         ),
     )
     # domínio x + x2 (deixa um “gutter” à direita para a colorbar)
@@ -91,7 +91,7 @@ def pareto_barh(
             domain=x_domain,
             range=[0, xmax],
             title="Quantidade",
-            title_standoff=18,                # respiro do título X
+            title_standoff=6,                # respiro do título X
             showgrid=True, gridcolor="rgba(0,0,0,0.08)",
         ),
         xaxis2=dict(
@@ -477,7 +477,6 @@ def bar_total_por_grupo(
 ) -> go.Figure:
     import re
 
-    # --- prepara base ---
     d = df[[grupo_col, valor_col]].copy()
     d[valor_col] = pd.to_numeric(d[valor_col], errors="coerce")
     d = d.groupby(grupo_col, as_index=False)[valor_col].sum()
@@ -488,98 +487,81 @@ def bar_total_por_grupo(
     total_geral = d[valor_col].sum()
     d["pct"] = np.where(total_geral > 0, d[valor_col] / total_geral * 100, 0.0)
 
-    # formatação
     def fmt_int(v):  return f"{int(round(v)):,}".replace(",", ".")
     def fmt_pct(p):  return f"{p:.1f}".replace(".", ",") + "%"
 
     d["texto"] = d[valor_col].apply(fmt_int) + " (" + d["pct"].apply(fmt_pct) + ")"
-
-    # --- paleta contínua ---
     colorscale = px.colors.sequential.Blues
 
-    # --- cálculo de cor do texto ---
-    def parse_rgb_any(c: str) -> tuple[int, int, int]:
+    def parse_rgb_any(c: str):
         c = c.strip()
         if c.startswith("#"):
-            h = c[1:]
-            if len(h) == 3:
-                h = "".join(ch * 2 for ch in h)
-            return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+            h = c[1:];  h = "".join(ch*2 for ch in h) if len(h)==3 else h
+            return tuple(int(h[i:i+2],16) for i in (0,2,4))
         if c.lower().startswith("rgb"):
             nums = re.findall(r"[\d.]+", c)
-            r, g, b = (float(nums[0]), float(nums[1]), float(nums[2]))
-            return int(round(r)), int(round(g)), int(round(b))
-        named = {"white": (255, 255, 255), "black": (0, 0, 0)}
-        return named.get(c.lower(), (0, 0, 0))
+            return tuple(int(round(float(v))) for v in nums[:3])
+        return (0, 0, 0)
 
-    def cor_texto(rgb_tuple):
-        r, g, b = rgb_tuple
-        lum = 0.299 * r + 0.587 * g + 0.114 * b
+    def cor_texto(rgb):
+        r,g,b = rgb
+        lum = 0.299*r + 0.587*g + 0.114*b
         return "black" if lum > 180 else "white"
 
-    # amostra cores de acordo com os valores para definir contraste do texto
     norm = d[valor_col] / d[valor_col].max() if len(d) else [0]
     sample_hex = px.colors.sample_colorscale(colorscale, norm)
     text_colors = [cor_texto(parse_rgb_any(c)) for c in sample_hex]
 
-    # espaçamento p/ rótulos
     x_max = float(d[valor_col].max()) if len(d) else 1.0
     x_pad = x_max * 0.12
 
-    # cria figura
     fig = go.Figure()
 
     if orientation == "h":
         fig.add_bar(
-            x=d[valor_col],
-            y=d[grupo_col],
-            orientation="h",
-            marker=dict(
-                color=d[valor_col],        # valores numéricos (não normalizados)
-                colorscale=colorscale,     # define o degradê
-                colorbar=dict(title="Total"),
-                line=dict(color="rgba(0,0,0,0.30)", width=0.5)
-            ),
-            text=d["texto"],
-            textfont=dict(color=text_colors, size=11),
+            x=d[valor_col], y=d[grupo_col], orientation="h",
+            marker=dict(color=d[valor_col], colorscale=colorscale,
+                        colorbar=dict(title="Total"),
+                        line=dict(color="rgba(0,0,0,0.30)", width=0.5)),
+            text=d["texto"], textfont=dict(color=text_colors, size=11),
             textposition="inside",
             hovertemplate="<b>%{y}</b><br>Total: %{x:,}<br>Participação: %{customdata:.1f}%<extra></extra>",
-            customdata=d["pct"],
-            name=""
+            customdata=d["pct"], name=""
         )
 
         fig.update_yaxes(
-            type="category",
-            categoryorder="array",
-            categoryarray=d[grupo_col].tolist(),
-            autorange="reversed",
+            type="category", categoryorder="array",
+            categoryarray=d[grupo_col].tolist(), autorange="reversed",
             title_text=y_label
         )
         fig.update_xaxes(
             title_text=x_label,
             showgrid=True, gridcolor="rgba(0,0,0,0.06)",
-            range=[0, x_max + x_pad]
+            range=[0, x_max + x_pad],
+            tickformat="~s",              # <<< rótulos no formato 5k, 10k, 15k…
+            separatethousands=True
         )
-
     else:
         fig.add_bar(
-            x=d[grupo_col],
-            y=d[valor_col],
-            marker=dict(
-                color=d[valor_col],
-                colorscale=colorscale,
-                colorbar=dict(title="Total"),
-                line=dict(color="rgba(0,0,0,0.30)", width=0.5)
-            ),
-            text=d["texto"],
-            textfont=dict(color=text_colors, size=11),
+            x=d[grupo_col], y=d[valor_col],
+            marker=dict(color=d[valor_col], colorscale=colorscale,
+                        colorbar=dict(title="Total"),
+                        line=dict(color="rgba(0,0,0,0.30)", width=0.5)),
+            text=d["texto"], textfont=dict(color=text_colors, size=11),
             textposition="inside",
             hovertemplate="<b>%{x}</b><br>Total: %{y:,}<br>Participação: %{customdata:.1f}%<extra></extra>",
-            customdata=d["pct"],
-            name=""
+            customdata=d["pct"], name=""
         )
-        fig.update_xaxes(type="category", categoryarray=d[grupo_col].tolist(), title_text=y_label)
-        fig.update_yaxes(title_text=x_label, showgrid=True, gridcolor="rgba(0,0,0,0.06)", range=[0, x_max + x_pad])
+        fig.update_xaxes(
+            type="category", categoryorder="array",
+            categoryarray=d[grupo_col].tolist(), title_text=y_label
+        )
+        fig.update_yaxes(
+            title_text=x_label, showgrid=True, gridcolor="rgba(0,0,0,0.06)",
+            range=[0, x_max + x_pad],
+            tickformat="~s",              # <<< idem para a vertical
+            separatethousands=True
+        )
 
     fig.update_layout(
         title=dict(text=titulo, x=0.02, y=0.98),
@@ -673,144 +655,129 @@ def heatmap_absoluto(
     )
 
     fig.update_layout(
-        title=title, template="plotly_white",
+        title=title,
+        template="plotly_white",
         margin=dict(l=10, r=10, t=50, b=10),
-        paper_bgcolor="white", plot_bgcolor="white",
-        xaxis=dict(side="bottom", tickangle=45)
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        xaxis=dict(
+            side="bottom",
+            tickangle=0,
+            tickmode="array",              # <--- força ticks manuais
+            tickvals=list(p.columns),      # <--- todos os anos (ou colunas)
+            ticktext=[str(x) for x in p.columns],
+            type="category",               # <--- garante eixo categórico
+        ),
+        yaxis=dict(type="category"),
     )
     return fig
 
 # ------------------------------------------------------------------
 # 8) Entradas e Saídas
 # ------------------------------------------------------------------
-def entradas_saidas_bilateral(
+def barras_bilaterais_entradas_saidas_ano(
     df: pd.DataFrame,
     *,
-    in_col: str = "matricula_ingresso_data",
-    out_col: str = "fechamento_conclusao_data",
-    id_candidates: tuple[str, ...] = ("cpf", "aluno_cpf", "cpf_documento"),
-    freq: str = "Q",                           # 'Q' trimestre, 'M' mês, 'Y' ano
-    title: str = "Entradas (+) vs Saídas (–) por período",
-    only_closed: bool = True,                  # filtra apenas quem tem data de saída
-    bar_colors: tuple[str, str] = ("rgb(19, 93, 171)", "rgb(0, 176, 239)"),
-    text_size: int = 20,
-    height: int = 700,
-    width: int | None = None,
-    y_margin_factor: float = 1.5,              # folga no eixo Y para não cortar textos
+    ano_col: str = "ano",
+    entradas_col: str = "entradas",
+    saidas_col: str = "saidas",
+    titulo: str = "Entradas (+) vs Saídas (–) por ano",
+    cor_entradas: str = "rgb(19, 93, 171)",
+    cor_saidas: str = "rgb(0, 176, 239)",
+    cor_media_entradas: str = "rgba(128, 128, 128, 0.5)",
+    cor_media_saidas: str = "rgba(128, 128, 128, 0.5)",
+    altura: int = 560,
+    largura: int = 1100,
 ) -> go.Figure:
     """
-    Plota barras bilaterais (Entradas positivas vs Saídas negativas) agregadas por período.
-
-    - Conta CPFs únicos (se houver uma das colunas em `id_candidates`), senão conta linhas.
-    - Agrega por `freq`: 'Q' (trimestre), 'M' (mês), 'Y' (ano).
-    - Saídas são desenhadas negativas para criar o efeito bilateral.
-    - Retorna um `go.Figure`.
-
-    Parâmetros principais:
-        in_col/out_col ......... colunas de data (parse automático)
-        id_candidates .......... ordem de preferência para ID único
-        freq ................... 'Q'|'M'|'Y'
-        only_closed ............ True = mantém apenas registros com data de saída
-        bar_colors ............. (cor entradas, cor saídas)
-        text_size/height/width . ajustes visuais
+    Desenha barras bilaterais por ano, com linhas de média de entrada e saída:
+      - Entradas positivas
+      - Saídas negativas (hover mostra valor positivo)
+      - Linhas médias horizontais (para Entradas e Saídas)
     """
-    if df is None or df.empty:
+    if df.empty or not set([ano_col, entradas_col, saidas_col]).issubset(df.columns):
         fig = go.Figure()
-        fig.update_layout(title="Sem dados", template="plotly_white", height=320)
+        fig.update_layout(
+            title="Sem dados",
+            template="plotly_white",
+            height=320, margin=dict(l=30, r=20, t=50, b=40),
+        )
         return fig
 
-    dfx = df.copy()
+    d = df.copy().sort_values(ano_col)
+    d["_saidas_neg"] = -pd.to_numeric(d[saidas_col], errors="coerce").fillna(0).astype(int)
+    d[entradas_col]   =  pd.to_numeric(d[entradas_col], errors="coerce").fillna(0).astype(int)
 
-    # parse de datas
-    dfx[in_col]  = pd.to_datetime(dfx[in_col],  errors="coerce")
-    dfx[out_col] = pd.to_datetime(dfx[out_col], errors="coerce")
-
-    if only_closed:
-        dfx = dfx[dfx[out_col].notna()].copy()
-
-    # Escolhe coluna de ID (contagem de CPFs únicos). Se não houver, conta linhas.
-    id_col = next((c for c in id_candidates if c in dfx.columns), None)
-
-    def _group_count(series_dates: pd.Series, label: str) -> pd.Series:
-        idx = series_dates.dt.to_period(freq).dt.to_timestamp()
-        if id_col:
-            s = dfx.groupby(idx)[id_col].nunique()
-        else:
-            s = dfx.groupby(idx).size()
-        s = s.rename(label)
-        return s
-
-    # Séries agregadas
-    entradas = _group_count(dfx[in_col],  "Entradas")
-    saidas   = _group_count(dfx[out_col], "Saídas")
-
-    # Index unificado
-    idx_all = entradas.index.union(saidas.index)
-    entradas = entradas.reindex(idx_all, fill_value=0)
-    saidas   = saidas.reindex(idx_all,   fill_value=0)
-    saidas_neg = -saidas
-
-    df_plot = pd.DataFrame({
-        "periodo": idx_all,
-        "Entradas": entradas,
-        "Saídas": saidas,
-        "Saídas_neg": saidas_neg,
-    })
-
-    # Tickformat conforme freq
-    tickformat = {
-        "Q": "%Y-Q%q",
-        "M": "%b/%y",
-        "Y": "%Y",
-        "A": "%Y",   # alias
-    }.get(freq.upper(), "%Y-%m")  # fallback
+    # médias
+    media_entradas = d[entradas_col].mean()
+    media_saidas   = d[saidas_col].mean()
 
     fig = go.Figure()
 
+    # barras positivas
     fig.add_bar(
-        x=df_plot["periodo"],
-        y=df_plot["Entradas"],
+        x=d[ano_col],
+        y=d[entradas_col],
         name="Entradas",
-        marker_color=bar_colors[0],
-        hovertemplate="Período=%{x|" + tickformat + "}<br>Entradas=%{y:,}<extra></extra>",
-        text=[f"{v:,}" if v > 0 else "" for v in df_plot["Entradas"]],
+        marker_color=cor_entradas,
+        hovertemplate="Ano=%{x}<br>Entradas=%{y:,}<extra></extra>",
+        text=[f"{v:,}" if v > 0 else "" for v in d[entradas_col]],
         textposition="outside",
-        textfont=dict(size=text_size, color="black"),
+        textfont=dict(size=14, color="black"),
         cliponaxis=False,
     )
 
+    # barras negativas
     fig.add_bar(
-        x=df_plot["periodo"],
-        y=df_plot["Saídas_neg"],
+        x=d[ano_col],
+        y=d["_saidas_neg"],
         name="Saídas",
-        marker_color=bar_colors[1],
-        hovertemplate="Período=%{x|" + tickformat + "}<br>Saídas=%{customdata:,}<extra></extra>",
-        customdata=df_plot["Saídas"],
-        text=[f"{v:,}" if v > 0 else "" for v in df_plot["Saídas"]],
+        marker_color=cor_saidas,
+        hovertemplate="Ano=%{x}<br>Saídas=%{customdata:,}<extra></extra>",
+        customdata=d[saidas_col],
+        text=[f"{v:,}" if v > 0 else "" for v in d[saidas_col]],
         textposition="outside",
-        textfont=dict(size=text_size, color="black"),
+        textfont=dict(size=14, color="black"),
         cliponaxis=False,
     )
 
-    fig.update_layout(
-        title=title,
-        barmode="relative",
-        xaxis=dict(title="", tickformat=tickformat),
-        yaxis=dict(title="Quantidade de CPFs", tickformat=","),
-        legend=dict(orientation="h", x=0.5, xanchor="center", y=1.08),
-        height=height,
-        width=width,
-        margin=dict(l=80, r=60, t=90, b=60),
-        paper_bgcolor="white", plot_bgcolor="white",
+    # eixo Y com folga
+    max_abs = max(d[entradas_col].max(), d[saidas_col].max())
+    margem = 1.35
+    fig.update_yaxes(range=[-max_abs*margem, max_abs*margem])
+
+    # linhas de média
+    fig.add_hline(
+        y=media_entradas,
+        line_dash="dash",
+        line_color=cor_media_entradas,
+        annotation_text=f"Média Entradas ({media_entradas:,.0f})",
+        annotation_position="top left",
+        annotation_font=dict(color=cor_media_entradas, size=13),
     )
 
-    # Folga vertical para não cortar rótulos
-    max_abs = max(
-        int(df_plot["Entradas"].max() if len(df_plot) else 0),
-        int(df_plot["Saídas"].max() if len(df_plot) else 0),
+    fig.add_hline(
+        y=-media_saidas,
+        line_dash="dash",
+        line_color=cor_media_saidas,
+        annotation_text=f"Média Saídas ({media_saidas:,.0f})",
+        annotation_position="bottom left",
+        annotation_font=dict(color=cor_media_saidas, size=13),
     )
-    if max_abs > 0:
-        pad = max_abs * y_margin_factor
-        fig.update_yaxes(range=[-pad, pad])
+
+    # layout geral
+    fig.update_layout(
+        title=titulo,
+        barmode="relative",
+        xaxis=dict(title="Ano"),
+        yaxis=dict(title="Qtd. de médicos (distintos)", tickformat=","),
+        legend=dict(orientation="h", x=0.5, xanchor="center", y=1.14),
+        height=altura,
+        width=largura,
+        margin=dict(l=70, r=40, t=90, b=60),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        template="plotly_white",
+    )
 
     return fig
